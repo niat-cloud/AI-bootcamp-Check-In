@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { AppError } from './lib/errors.js';
+import { requireAdminAuth } from './lib/auth.js';
+import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
 import { checkinRouter } from './routes/checkin.js';
 import { eventsRouter } from './routes/events.js';
@@ -14,10 +16,18 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+  // Public kiosk endpoints
   app.use('/api/checkin', checkinRouter);
-  app.use('/api/events/:id', importRouter);
-  app.use('/api/events/:id', adminRouter);
-  app.use('/api/events', eventsRouter);
+
+  // Authentication endpoints
+  app.use('/api/admin/auth', authRouter);
+
+  // Protected admin event operations
+  app.use('/api/events/:id', requireAdminAuth, importRouter);
+  app.use('/api/events/:id', requireAdminAuth, adminRouter);
+  app.use('/api/events', requireAdminAuth, eventsRouter);
+
   app.use('/api', (_req, res) => res.status(404).json({ code: 'NOT_FOUND', message: 'Unknown API route' }));
 
   // In production, serve the built React app.

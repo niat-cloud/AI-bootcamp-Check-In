@@ -10,18 +10,18 @@
   --color-niat-gold: #FFB719;
   --color-niat-gold-light: #FFD65A;
   --color-niat-cream: #FFF8D6;
-  --color-niat-warm-white: #FFFDF7;
+  --color-niat-warm-white: #FCFAF7;
   --color-niat-text: #191919;
-  --color-niat-muted: #6B6258;
-  --color-niat-pink: #FBE9E9;
-  --color-niat-line: #EADFD3;
+  --color-niat-muted: #5C554E;
+  --color-niat-pink: #FDF2F2;
+  --color-niat-line: #EAE3D9;
 
-  --radius-card: 24px;
-  --radius-input: 18px;
+  --radius-card: 20px;
+  --radius-input: 16px;
 
-  --shadow-soft: 0 10px 30px -12px rgb(134 19 23 / 0.18);
-  --shadow-lift: 0 18px 40px -14px rgb(134 19 23 / 0.32);
-  --shadow-card: 0 1px 2px rgb(25 25 25 / 0.04), 0 12px 32px -16px rgb(134 19 23 / 0.16);
+  --shadow-soft: 0 10px 25px -8px rgb(167 25 30 / 0.12);
+  --shadow-lift: 0 18px 36px -10px rgb(167 25 30 / 0.22);
+  --shadow-card: 0 1px 3px rgb(25 25 25 / 0.04), 0 10px 28px -12px rgb(134 19 23 / 0.08);
 
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 
@@ -66,12 +66,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Warm branded backdrop: maroon + gold glows over a faint dot grid. */
+/* Warm, airy branded backdrop: subtle warm hero gradient with faint dot grid and clean white base */
 .niat-backdrop {
   background:
-    radial-gradient(60rem 40rem at -10% -15%, rgb(167 25 30 / 0.09), transparent 60%),
-    radial-gradient(50rem 36rem at 110% 110%, rgb(255 183 25 / 0.14), transparent 60%),
-    radial-gradient(circle at 1px 1px, rgb(134 19 23 / 0.07) 1px, transparent 0) 0 0 / 22px 22px,
+    radial-gradient(55rem 32rem at 50% 12%, rgb(255 244 220 / 0.70), transparent 70%),
+    radial-gradient(40rem 26rem at 50% 0%, rgb(167 25 30 / 0.035), transparent 65%),
+    radial-gradient(circle at 1px 1px, rgb(134 19 23 / 0.032) 1px, transparent 0) 0 0 / 30px 30px,
     var(--color-niat-warm-white);
 }
 
@@ -101,7 +101,7 @@ body {
   @apply rounded-2xl border border-niat-line bg-white p-5 shadow-[var(--shadow-card)];
 }
 @utility eyebrow {
-  @apply text-xs font-bold uppercase tracking-[0.22em] text-niat-maroon;
+  @apply text-xs sm:text-[13px] font-bold uppercase tracking-[0.22em] text-niat-maroon;
 }
 
 /* ---------- Kiosk extras ---------- */
