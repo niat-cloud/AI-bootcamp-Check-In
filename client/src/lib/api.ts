@@ -143,7 +143,14 @@ export interface Room {
 export interface SeatAssignment {
   eventParticipantId: number;
   alreadyAssigned: boolean;
-  participant: { name: string; schoolCollege: string; className: string | null; phone: string; registrationType: string };
+  participant: {
+    name: string;
+    schoolCollege: string;
+    className: string | null;
+    location?: string | null;
+    phone: string;
+    registrationType: string;
+  };
   room: string | null;
   teamNumber: number | null;
   teamName: string | null;
@@ -157,6 +164,7 @@ export interface SearchResult {
   name: string;
   schoolCollege: string;
   className: string | null;
+  location?: string | null;
   phone: string;
   registrationType: string;
   seatCode: string | null;

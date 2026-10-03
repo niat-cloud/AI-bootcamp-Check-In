@@ -9,6 +9,7 @@ interface ParticipantRow {
   parentPhone: string | null;
   schoolCollege: string;
   className: string | null;
+  location: string | null;
   registrationType: 'existing' | 'walk_in';
   room: string | null;
   teamNumber: number | null;
@@ -43,7 +44,7 @@ export default function Participants() {
 
   return (
     <div>
-      <PageHeader title="Participants" subtitle="Search by name, phone, school, team (“17”) or seat (“17B”)." />
+      <PageHeader title="Participants" subtitle="Search by name, phone, school, location, team (“17”) or seat (“17B”)." />
       <div className="flex flex-wrap gap-3">
         <input className="input max-w-md py-3 text-lg" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
         <div className="flex rounded-xl border border-niat-line bg-white p-1">
@@ -61,6 +62,7 @@ export default function Participants() {
           <thead className="border-b border-niat-line bg-niat-warm-white text-niat-muted">
             <tr>
               <th className="px-4 py-3">Name</th><th className="px-3">Phone</th><th className="px-3">School/College</th>
+              <th className="px-3">Coming From</th>
               <th className="px-3">Type</th><th className="px-3">Room</th><th className="px-3">Team</th><th className="px-3">Seat</th><th className="px-3">Check-in</th>
             </tr>
           </thead>
@@ -70,6 +72,11 @@ export default function Participants() {
                 <td className="px-4 py-2.5 font-medium">{r.name}{r.className && <span className="ml-1 text-xs text-niat-muted/70">({r.className})</span>}</td>
                 <td className="px-3 font-mono">{r.phone}</td>
                 <td className="px-3">{r.schoolCollege}</td>
+                <td className="px-3">
+                  {r.location
+                    ? <span className="inline-flex items-center rounded-md bg-niat-cream px-2 py-0.5 text-xs font-semibold text-niat-maroon ring-1 ring-niat-gold/40">{r.location}</span>
+                    : <span className="text-niat-muted/40">—</span>}
+                </td>
                 <td className="px-3">
                   {r.registrationType === 'walk_in'
                     ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Walk-in</span>
@@ -85,7 +92,7 @@ export default function Participants() {
                 </td>
               </tr>
             ))}
-            {data && data.rows.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-niat-muted">No participants match.</td></tr>}
+            {data && data.rows.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-niat-muted">No participants match.</td></tr>}
           </tbody>
         </table>
       </div>

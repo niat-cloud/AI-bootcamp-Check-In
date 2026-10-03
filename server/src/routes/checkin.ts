@@ -51,7 +51,7 @@ checkinRouter.get('/search', async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `SELECT ep.id, p.name, p.school_college, p.class, p.phone, ep.registration_type,
+    `SELECT ep.id, p.name, p.school_college, p.class, p.phone, p.location, ep.registration_type,
             t.team_number, ep.seat_label
      FROM event_participants ep
      JOIN participants p ON p.id = ep.participant_id
@@ -67,6 +67,7 @@ checkinRouter.get('/search', async (req, res) => {
     name: r.name,
     schoolCollege: r.school_college,
     className: r.class,
+    location: r.location ?? null,
     phone: maskPhone(r.phone),
     registrationType: r.registration_type,
     seatCode: r.team_number ? `${r.team_number}${r.seat_label}` : null,
@@ -96,6 +97,7 @@ const walkInInput = z.object({
   parentPhone: z.string().trim().min(1, 'Parent phone number is required'),
   schoolCollege: z.string().trim().min(2, 'School/College is required'),
   className: z.string().trim().optional(),
+  location: z.string().trim().min(2, "The location you're coming from is required"),
 });
 
 checkinRouter.post('/walk-in', async (req, res) => {
@@ -125,15 +127,17 @@ checkinRouter.post('/walk-in', async (req, res) => {
     // Create the person (or refresh a returning one) and register them as a walk-in, in one statement.
     const { rows: [ep] } = await client.query(
       `WITH person AS (
-         INSERT INTO participants (name, phone, parent_phone, school_college, class)
-         VALUES ($1, $2, $3, $4, NULLIF($5, ''))
+         INSERT INTO participants (name, phone, parent_phone, school_college, class, location)
+         VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
          ON CONFLICT (phone) DO UPDATE SET
            name = EXCLUDED.name, parent_phone = EXCLUDED.parent_phone, school_college = EXCLUDED.school_college,
-           class = COALESCE(EXCLUDED.class, participants.class), updated_at = now()
+           class = COALESCE(EXCLUDED.class, participants.class),
+           location = COALESCE(EXCLUDED.location, participants.location),
+           updated_at = now()
          RETURNING id)
        INSERT INTO event_participants (event_id, participant_id, registration_type)
-       SELECT $6, id, 'walk_in' FROM person RETURNING id`,
-      [name, phone, parentPhone, v.schoolCollege, v.className ?? '', check.event_id],
+       SELECT $7, id, 'walk_in' FROM person RETURNING id`,
+      [name, phone, parentPhone, v.schoolCollege, v.className ?? '', v.location, check.event_id],
     );
     return assignSeatTx(client, ep.id, { expectedEventId: check.event_id });
   });

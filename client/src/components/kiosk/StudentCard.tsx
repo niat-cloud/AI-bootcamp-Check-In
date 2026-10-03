@@ -1,11 +1,12 @@
 import { initials } from './Search';
 
-export function StudentCard({ name, schoolCollege, className, phone, registrationType }: {
+export function StudentCard({ name, schoolCollege, className, phone, registrationType, location }: {
   name: string;
   schoolCollege: string;
   className: string | null;
   phone: string;
   registrationType: string;
+  location?: string | null;
 }) {
   return (
     <div className="relative overflow-hidden rounded-[var(--radius-card)] border border-niat-line bg-white p-5 shadow-[var(--shadow-card)] sm:p-9">
@@ -22,6 +23,7 @@ export function StudentCard({ name, schoolCollege, className, phone, registratio
 
       <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 sm:mt-7 sm:gap-5">
         <Detail label="School / College" value={schoolCollege || '—'} wide />
+        {location && <Detail label="Coming From" value={location} />}
         {className && <Detail label="Class" value={className} />}
         <Detail label="Phone" value={<span className="font-mono tracking-wider">{phone}</span>} />
       </dl>

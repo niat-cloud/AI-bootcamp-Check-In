@@ -136,7 +136,7 @@ adminRouter.get('/teams', async (req, res) => {
 
 const PARTICIPANT_SELECT = `
   SELECT ep.id, p.name, p.phone, p.parent_phone AS "parentPhone", p.school_college AS "schoolCollege",
-    p.class AS "className", ep.registration_type AS "registrationType", ep.status,
+    p.class AS "className", p.location, ep.registration_type AS "registrationType", ep.status,
     r.name AS room, t.team_number AS "teamNumber", ep.seat_label AS "seatLabel", ep.check_in_time AS "checkInTime"
   FROM event_participants ep
   JOIN participants p ON p.id = ep.participant_id
@@ -174,7 +174,7 @@ adminRouter.get('/participants', async (req, res) => {
     } else {
       for (const word of q.toLowerCase().split(/\s+/).slice(0, 5)) {
         params.push(`%${word.replace(/[%_\\]/g, '\\$&')}%`);
-        conds.push(`(lower(p.name) LIKE $${params.length} OR lower(p.school_college) LIKE $${params.length})`);
+        conds.push(`(lower(p.name) LIKE $${params.length} OR lower(p.school_college) LIKE $${params.length} OR lower(COALESCE(p.location, '')) LIKE $${params.length})`);
       }
     }
   }
@@ -208,6 +208,7 @@ adminRouter.get('/export', async (req, res) => {
     'Parent Phone': r.parentPhone ?? '',
     'School/College': r.schoolCollege,
     Class: r.className ?? '',
+    'Coming From': r.location ?? '',
     'Registration Type': r.registrationType === 'walk_in' ? 'Walk-in' : 'Existing',
     Status: r.checkInTime ? 'Checked In' : 'Not Arrived',
     Room: r.room ?? '',
@@ -217,7 +218,7 @@ adminRouter.get('/export', async (req, res) => {
   }));
 
   const sheet = XLSX.utils.json_to_sheet(data, {
-    header: ['Name', 'Phone', 'Parent Phone', 'School/College', 'Class', 'Registration Type', 'Status', 'Room', 'Team', 'Seat', 'Check-in Time'],
+    header: ['Name', 'Phone', 'Parent Phone', 'School/College', 'Class', 'Coming From', 'Registration Type', 'Status', 'Room', 'Team', 'Seat', 'Check-in Time'],
   });
   const safeName = `${event.name}-${event.date}`.replace(/[^\w-]+/g, '_');
   if (format === 'csv') {
@@ -225,7 +226,7 @@ adminRouter.get('/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}.csv"`);
     res.send('﻿' + XLSX.utils.sheet_to_csv(sheet));
   } else {
-    sheet['!cols'] = [24, 13, 13, 28, 8, 16, 12, 12, 10, 7, 13].map((wch) => ({ wch }));
+    sheet['!cols'] = [24, 13, 13, 28, 8, 20, 16, 12, 12, 10, 7, 13].map((wch) => ({ wch }));
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, 'Participants');
     const buffer = XLSX.write(book, { type: 'buffer', bookType: 'xlsx' });

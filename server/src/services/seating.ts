@@ -9,7 +9,14 @@ import { maskPhone } from '../lib/phone.js';
 export interface SeatAssignment {
   eventParticipantId: number;
   alreadyAssigned: boolean;
-  participant: { name: string; schoolCollege: string; className: string | null; phone: string; registrationType: string };
+  participant: {
+    name: string;
+    schoolCollege: string;
+    className: string | null;
+    location?: string | null;
+    phone: string;
+    registrationType: string;
+  };
   room: string | null;
   teamNumber: number | null;
   teamName: string | null;
@@ -22,7 +29,7 @@ export interface SeatAssignment {
 export async function getAssignment(db: Db, eventParticipantId: number, alreadyAssigned = false): Promise<SeatAssignment> {
   const { rows: [row] } = await db.query(
     `SELECT ep.id, ep.registration_type, ep.seat_label,
-            p.name, p.school_college, p.class, p.phone,
+            p.name, p.school_college, p.class, p.location, p.phone,
             r.name AS room_name, t.team_number, e.team_name_prefix,
             COALESCE((
               SELECT json_agg(json_build_object('label', s.label, 'name', mp.name, 'epId', s.event_participant_id) ORDER BY s.position)
@@ -48,6 +55,7 @@ export async function getAssignment(db: Db, eventParticipantId: number, alreadyA
       name: row.name,
       schoolCollege: row.school_college,
       className: row.class,
+      location: row.location ?? null,
       phone: maskPhone(row.phone),
       registrationType: row.registration_type,
     },
