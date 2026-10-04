@@ -63,12 +63,19 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export function requireAdminAuth(req: Request, _res: Response, next: NextFunction) {
+  let token: string | undefined;
+
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7).trim();
+  } else if (typeof req.query.token === 'string' && req.query.token.trim()) {
+    token = req.query.token.trim();
+  }
+
+  if (!token) {
     throw new AppError(401, 'UNAUTHORIZED', 'Authentication required. Please sign in to access admin operations.');
   }
 
-  const token = authHeader.slice(7).trim();
   const verified = verifyToken(token);
   if (!verified) {
     throw new AppError(401, 'TOKEN_EXPIRED', 'Session expired or invalid. Please sign in again.');

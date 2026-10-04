@@ -221,6 +221,7 @@ adminRouter.get('/export', async (req, res) => {
     header: ['Name', 'Phone', 'Parent Phone', 'School/College', 'Class', 'Coming From', 'Registration Type', 'Status', 'Room', 'Team', 'Seat', 'Check-in Time'],
   });
   const safeName = `${event.name}-${event.date}`.replace(/[^\w-]+/g, '_');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
   if (format === 'csv') {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}.csv"`);
