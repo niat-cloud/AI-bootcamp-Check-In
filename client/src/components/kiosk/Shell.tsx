@@ -1,9 +1,18 @@
 import logo from '../../assets/niat-logo.png';
+import { Shield } from '../checkin/CheckinUI';
 
 const monthYear = (date?: string) =>
   date ? new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }).toUpperCase() : '';
 
-export function KioskHeader({ date, place, onHome }: { date?: string; place?: string; onHome?: () => void }) {
+export function KioskHeader({ date, place, onHome, minimal }: { date?: string; place?: string; onHome?: () => void; minimal?: boolean }) {
+  // Student's own phone: just the shield, so nothing competes with the seat.
+  if (minimal) {
+    return (
+      <header className="relative z-10 flex justify-center px-4 pb-1 pt-[max(1rem,env(safe-area-inset-top))]">
+        <Shield size={44} />
+      </header>
+    );
+  }
   return (
     <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-4 pb-2 pt-3 sm:px-8 sm:py-5">
       <button onClick={onHome} className="rounded-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-niat-gold/50" aria-label="Back to start">
@@ -30,10 +39,17 @@ export function KioskFooter() {
 }
 
 /** Full-page branded frame for every participant screen. */
-export function KioskShell({ children, date, place, onHome }: { children: React.ReactNode; date?: string; place?: string; onHome?: () => void }) {
+export function KioskShell({ children, date, place, onHome, minimal }: {
+  children: React.ReactNode;
+  date?: string;
+  place?: string;
+  onHome?: () => void;
+  /** Shield-only header (student's phone). */
+  minimal?: boolean;
+}) {
   return (
     <div className="niat-backdrop min-h-dvh-screen relative flex flex-col overflow-hidden">
-      <KioskHeader date={date} place={place} onHome={onHome} />
+      <KioskHeader date={date} place={place} onHome={onHome} minimal={minimal} />
       <main className="relative z-10 flex flex-1 flex-col px-4 pb-6 sm:px-8">{children}</main>
       <KioskFooter />
     </div>

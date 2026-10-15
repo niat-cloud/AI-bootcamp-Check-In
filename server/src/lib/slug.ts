@@ -10,7 +10,7 @@ export const RESERVED_LOCATION_SLUGS = new Set(['admin', 'api', 'assets', 'gate'
 export function slugify(text: string): string {
   return text
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/\p{M}/gu, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')

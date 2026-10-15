@@ -66,10 +66,11 @@ export async function getAssignment(db: Db, eventParticipantId: number, alreadyA
     teamName: row.team_number ? `${row.team_name_prefix} ${row.team_number}` : null,
     seatLabel: row.seat_label,
     seatCode: row.team_number ? `${row.team_number}${row.seat_label}` : null,
-    // Every seat at the table; empty seats have name = null ("waiting for teammate").
+    // Every seat at the table; empty seats have name = null ("waiting for teammate"). Full names:
+    // many students write their surname first, so a "first word" would often be the surname.
     members: (row.members as { label: string; name: string | null; epId: number | null }[]).map((m) => ({
       label: m.label,
-      name: m.name ? m.name.split(/\s+/)[0] : null,
+      name: m.name ?? null,
       isSelf: m.epId === row.id,
     })),
   };
