@@ -9,6 +9,8 @@ import { maskPhone } from '../lib/phone.js';
 export interface SeatAssignment {
   eventParticipantId: number;
   alreadyAssigned: boolean;
+  /** Arrived while every approved seat was taken: on the waiting list, no seat yet. */
+  waiting?: boolean;
   participant: {
     name: string;
     schoolCollege: string;
@@ -103,7 +105,7 @@ export async function assignSeatTx(
   const { rows } = await client.query(
     `WITH room AS (
        SELECT r.id FROM rooms r
-       WHERE r.event_id = $2 AND EXISTS (
+       WHERE r.event_id = $2 AND r.is_active AND EXISTS (
          SELECT 1 FROM seats s JOIN teams t ON t.id = s.team_id
          WHERE t.room_id = r.id AND s.status = 'available')
        ORDER BY r.priority LIMIT 1)
@@ -126,7 +128,13 @@ export async function assignSeatTx(
   }));
   const team = roomId ? pickTeam(teams, event.active_pool_size, Number(event.pool_fill_threshold), options.rng) : null;
   if (!team) {
-    throw new AppError(409, 'VENUE_FULL', 'Venue capacity reached. All configured seats are occupied. Please contact the event organizer.');
+    // No approved seat left: record the arrival on the waiting list (never a fake seat) so an
+    // organizer can seat them once capacity is added. The caller reports VENUE_FULL after commit.
+    await client.query(
+      `UPDATE event_participants SET status = 'waiting', arrived_at = COALESCE(arrived_at, now()) WHERE id = $1`,
+      [eventParticipantId],
+    );
+    return { ...(await getAssignment(client, eventParticipantId, false)), waiting: true };
   }
 
   // 3. Take the first free seat at that table and record it on both sides, in one statement.
@@ -139,7 +147,7 @@ export async function assignSeatTx(
        FROM seat WHERE s.id = seat.id RETURNING s.id, s.label)
      UPDATE event_participants ep
      SET seat_id = taken.id, seat_label = taken.label, team_id = $2, room_id = $3,
-         status = 'checked_in', check_in_time = now(), assigned_at = now()
+         status = 'checked_in', check_in_time = now(), assigned_at = now(), arrived_at = COALESCE(ep.arrived_at, now())
      FROM taken WHERE ep.id = $1`,
     [eventParticipantId, team.id, roomId],
   );

@@ -4,12 +4,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { AppError } from './lib/errors.js';
-import { requireAdminAuth } from './lib/auth.js';
+import { requireAdminAuth, requireEventAccess } from './lib/auth.js';
 import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
-import { checkinRouter } from './routes/checkin.js';
 import { eventsRouter } from './routes/events.js';
+import { gateRouter } from './routes/gate.js';
 import { importRouter } from './routes/import.js';
+import { platformRouter } from './routes/platform.js';
+import { publicRouter } from './routes/public.js';
 
 export function createApp() {
   const app = express();
@@ -17,15 +19,19 @@ export function createApp() {
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-  // Public kiosk endpoints
-  app.use('/api/checkin', checkinRouter);
+  // Public: event pages opened from the QR code, live events, locations for the access request form.
+  app.use('/api/public', publicRouter);
 
-  // Authentication endpoints
+  // Admin sign-in, sign-up and account.
   app.use('/api/admin/auth', authRouter);
 
-  // Protected admin event operations
-  app.use('/api/events/:id', requireAdminAuth, importRouter);
-  app.use('/api/events/:id', requireAdminAuth, adminRouter);
+  // Everything below needs a signed-in, approved admin.
+  app.use('/api/platform', requireAdminAuth, platformRouter);
+  // Every /api/events/:id route is limited to events in the admin's own locations.
+  app.use('/api/events/:id', requireAdminAuth, requireEventAccess);
+  app.use('/api/events/:id/gate', gateRouter);
+  app.use('/api/events/:id', importRouter);
+  app.use('/api/events/:id', adminRouter);
   app.use('/api/events', requireAdminAuth, eventsRouter);
 
   app.use('/api', (_req, res) => res.status(404).json({ code: 'NOT_FOUND', message: 'Unknown API route' }));

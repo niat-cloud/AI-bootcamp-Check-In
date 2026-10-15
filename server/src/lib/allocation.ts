@@ -47,18 +47,31 @@ export function pickTeam(
   }
 }
 
-/** Plan the physical tables for the event: full tables per room plus one smaller table for any remainder. */
+/**
+ * Tables for one room: full tables plus one smaller table for any remainder.
+ * Numbering is room-local: every room starts at Team 1.
+ */
+export function planRoomTeams(capacity: number, teamSize: number): { teamNumber: number; capacity: number }[] {
+  const full = Math.floor(capacity / teamSize);
+  const remainder = capacity % teamSize;
+  const plan = Array.from({ length: full }, (_, i) => ({ teamNumber: i + 1, capacity: teamSize }));
+  if (remainder > 0) plan.push({ teamNumber: full + 1, capacity: remainder });
+  return plan;
+}
+
+/** Plan the physical tables for every room of an event (room-local numbering). */
 export function planTeams(
-  rooms: { id: number; capacity: number; priority: number }[],
+  rooms: { id: number; capacity: number; priority: number; teamSize?: number | null }[],
   teamSize: number,
 ): { roomId: number; teamNumber: number; capacity: number }[] {
-  const plan: { roomId: number; teamNumber: number; capacity: number }[] = [];
-  let teamNumber = 1;
-  for (const room of [...rooms].sort((a, b) => a.priority - b.priority)) {
-    const full = Math.floor(room.capacity / teamSize);
-    const remainder = room.capacity % teamSize;
-    for (let i = 0; i < full; i++) plan.push({ roomId: room.id, teamNumber: teamNumber++, capacity: teamSize });
-    if (remainder > 0) plan.push({ roomId: room.id, teamNumber: teamNumber++, capacity: remainder });
-  }
-  return plan;
+  return [...rooms]
+    .sort((a, b) => a.priority - b.priority)
+    .flatMap((room) => planRoomTeams(room.capacity, room.teamSize ?? teamSize).map((t) => ({ roomId: room.id, ...t })));
+}
+
+const LETTERS = 'ABCDEFGH'.split('');
+
+/** Seat labels for a table of `size`: the event's labels when they cover it, otherwise A, B, C… */
+export function seatLabelsFor(size: number, eventLabels: string[]): string[] {
+  return eventLabels.length >= size ? eventLabels.slice(0, size) : LETTERS.slice(0, size);
 }

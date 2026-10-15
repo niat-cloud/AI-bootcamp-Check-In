@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool, withTransaction } from '../db/pool.js';
+import { adminOf, canAccessLocation } from '../lib/auth.js';
 import { AppError, badRequest } from '../lib/errors.js';
 import { normalizePhone } from '../lib/phone.js';
 import { loadEvent } from './events.js';
@@ -97,7 +98,9 @@ importRouter.post('/copy-from/:sourceId', async (req, res) => {
   const event = await loadEvent(eventId);
   if (event.status === 'completed') throw new AppError(409, 'EVENT_LOCKED', 'Cannot import into a completed event.');
   if (sourceId === eventId) throw badRequest('Choose a different event to copy from.');
-  await loadEvent(sourceId);
+  const source = await loadEvent(sourceId);
+  // The source must also belong to one of this admin's locations.
+  if (!canAccessLocation(adminOf(req), source.locationId)) throw new AppError(404, 'NOT_FOUND', 'Event not found');
   const { rowCount } = await pool.query(
     `INSERT INTO event_participants (event_id, participant_id, registration_type)
      SELECT $1, participant_id, 'existing' FROM event_participants WHERE event_id = $2

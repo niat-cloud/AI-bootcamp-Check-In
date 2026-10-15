@@ -37,7 +37,7 @@ export function SeatReveal({ assignment, mode, onDone }: {
   }, [revealed, returning]);
 
   return (
-    <div className={`relative mx-auto flex w-full max-w-3xl flex-1 flex-col items-center text-center ${mode === 'personal' ? 'pb-32' : 'pb-4'} pt-1 sm:py-6`}>
+    <div className={`relative mx-auto flex w-full max-w-3xl flex-1 flex-col items-center text-center ${mode === 'personal' ? 'pb-32 sm:pb-4' : 'pb-4'} pt-1 sm:py-6`}>
       {!returning && <div className="aurora" aria-hidden />}
       {!returning && revealed && <Confetti />}
 
@@ -124,7 +124,7 @@ export function SeatReveal({ assignment, mode, onDone }: {
           <p className="mt-2 text-xs text-niat-muted/80">Returns to search automatically</p>
         </div>
       ) : (
-        <div className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-niat-line bg-white/85 px-5 pt-3 backdrop-blur-md">
+        <div className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-niat-line bg-white/85 px-5 pt-3 backdrop-blur-md sm:static sm:mt-6 sm:w-full sm:max-w-md sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
           <button onClick={onDone}
             className="w-full cursor-pointer rounded-2xl py-3 text-base font-bold text-niat-maroon ring-1 ring-niat-line transition-colors active:bg-niat-cream">
             Check in someone else

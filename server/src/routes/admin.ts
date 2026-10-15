@@ -32,7 +32,7 @@ adminRouter.get('/dashboard', async (req, res) => {
      FROM teams t
      JOIN rooms r ON r.id = t.room_id
      LEFT JOIN seats s ON s.team_id = t.id
-     WHERE t.event_id = $1 GROUP BY t.id, r.name ORDER BY t.team_number`,
+     WHERE t.event_id = $1 GROUP BY t.id, r.name, r.priority ORDER BY r.priority, t.team_number`,
     [event.id],
   );
 
@@ -71,7 +71,7 @@ adminRouter.get('/dashboard', async (req, res) => {
      LEFT JOIN event_participants ep ON ep.id = s.event_participant_id
      LEFT JOIN participants p ON p.id = ep.participant_id
      WHERE t.event_id = $1
-     ORDER BY t.team_number, s.position`,
+     ORDER BY t.room_id, t.team_number, s.position`,
     [event.id],
   );
 
@@ -121,7 +121,7 @@ adminRouter.get('/teams', async (req, res) => {
      LEFT JOIN event_participants ep ON ep.id = s.event_participant_id
      LEFT JOIN participants p ON p.id = ep.participant_id
      WHERE t.event_id = $1
-     ORDER BY t.team_number, s.position`,
+     ORDER BY r.priority, t.team_number, s.position`,
     [event.id],
   );
   const teams = new Map<number, any>();
@@ -137,7 +137,8 @@ adminRouter.get('/teams', async (req, res) => {
 const PARTICIPANT_SELECT = `
   SELECT ep.id, p.name, p.phone, p.parent_phone AS "parentPhone", p.school_college AS "schoolCollege",
     p.class AS "className", p.location, ep.registration_type AS "registrationType", ep.status,
-    r.name AS room, t.team_number AS "teamNumber", ep.seat_label AS "seatLabel", ep.check_in_time AS "checkInTime"
+    r.id AS "roomId", r.name AS room, t.team_number AS "teamNumber", ep.seat_label AS "seatLabel",
+    ep.check_in_time AS "checkInTime", ep.arrived_at AS "arrivedAt"
   FROM event_participants ep
   JOIN participants p ON p.id = ep.participant_id
   LEFT JOIN rooms r ON r.id = ep.room_id
@@ -151,8 +152,19 @@ adminRouter.get('/participants', async (req, res) => {
   const conds = ['ep.event_id = $1'];
 
   if (filter === 'checked_in') conds.push('ep.seat_id IS NOT NULL');
-  if (filter === 'pending') conds.push('ep.seat_id IS NULL');
+  if (filter === 'pending') conds.push(`ep.seat_id IS NULL AND ep.status = 'registered'`);
+  if (filter === 'waiting') conds.push(`ep.status = 'waiting'`);
   if (filter === 'walk_in') conds.push(`ep.registration_type = 'walk_in'`);
+  const roomId = Number(req.query.roomId);
+  if (Number.isInteger(roomId) && roomId > 0) {
+    params.push(roomId);
+    conds.push(`ep.room_id = $${params.length}`);
+  }
+  const teamNumber = Number(req.query.team);
+  if (Number.isInteger(teamNumber) && teamNumber > 0) {
+    params.push(teamNumber);
+    conds.push(`t.team_number = $${params.length}`);
+  }
 
   if (q) {
     const seat = q.match(/^(?:team\s*)?(\d{1,4})\s*([a-z]{0,2})$/i);
@@ -181,7 +193,7 @@ adminRouter.get('/participants', async (req, res) => {
 
   const { rows } = await pool.query(
     `${PARTICIPANT_SELECT} WHERE ${conds.join(' AND ')}
-     ORDER BY ep.check_in_time DESC NULLS LAST, p.name LIMIT 500`,
+     ORDER BY ep.check_in_time DESC NULLS LAST, ep.arrived_at DESC NULLS LAST, p.name LIMIT 500`,
     params,
   );
   const { rows: [{ total }] } = await pool.query(
@@ -198,7 +210,7 @@ adminRouter.get('/export', async (req, res) => {
   const format = req.query.format === 'xlsx' ? 'xlsx' : 'csv';
   const { rows } = await pool.query(
     `${PARTICIPANT_SELECT} WHERE ep.event_id = $1
-     ORDER BY t.team_number NULLS LAST, ep.seat_label, p.name`,
+     ORDER BY r.priority NULLS LAST, t.team_number NULLS LAST, ep.seat_label, p.name`,
     [event.id],
   );
   const timeFmt = new Intl.DateTimeFormat('en-IN', { timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true });
@@ -210,11 +222,11 @@ adminRouter.get('/export', async (req, res) => {
     Class: r.className ?? '',
     'Coming From': r.location ?? '',
     'Registration Type': r.registrationType === 'walk_in' ? 'Walk-in' : 'Existing',
-    Status: r.checkInTime ? 'Checked In' : 'Not Arrived',
+    Status: r.checkInTime ? 'Checked In' : r.status === 'waiting' ? 'Waiting for Seat' : 'Not Arrived',
     Room: r.room ?? '',
     Team: r.teamNumber ? `${event.teamNamePrefix} ${r.teamNumber}` : '',
     Seat: r.teamNumber ? `${r.teamNumber}${r.seatLabel}` : '',
-    'Check-in Time': r.checkInTime ? timeFmt.format(r.checkInTime).toUpperCase() : '',
+    'Check-in Time': (r.checkInTime ?? r.arrivedAt) ? timeFmt.format(r.checkInTime ?? r.arrivedAt).toUpperCase() : '',
   }));
 
   const sheet = XLSX.utils.json_to_sheet(data, {
@@ -235,4 +247,102 @@ adminRouter.get('/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}.xlsx"`);
     res.send(buffer);
   }
+});
+
+/** Everything the Rooms & Teams page needs, in one round-trip. */
+adminRouter.get('/rooms-overview', async (req, res) => {
+  const event = await loadEvent(Number((req.params as Record<string, string>).id));
+  const [counts, rooms, seats, waiting, log] = await Promise.all([
+    pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE registration_type = 'existing')::int AS registered,
+         COUNT(*) FILTER (WHERE registration_type = 'walk_in')::int AS "walkIns",
+         COUNT(*) FILTER (WHERE status IN ('waiting', 'checked_in'))::int AS arrivals,
+         COUNT(*) FILTER (WHERE seat_id IS NOT NULL)::int AS assigned,
+         COUNT(*) FILTER (WHERE status = 'waiting')::int AS waiting
+       FROM event_participants WHERE event_id = $1`,
+      [event.id],
+    ),
+    pool.query(
+      `SELECT r.id, r.name, r.capacity, r.priority, r.is_active AS "isActive",
+         r.team_size AS "teamSizeOverride", COALESCE(r.team_size, $2) AS "teamSize",
+         (SELECT COUNT(*)::int FROM event_participants ep WHERE ep.room_id = r.id) AS used,
+         (SELECT COUNT(*)::int FROM teams t WHERE t.room_id = r.id) AS "teamCount",
+         (SELECT COUNT(*)::int FROM seats s JOIN teams t ON t.id = s.team_id WHERE t.room_id = r.id) AS "seatCount"
+       FROM rooms r WHERE r.event_id = $1 ORDER BY r.priority`,
+      [event.id, event.teamSize],
+    ),
+    pool.query(
+      `SELECT t.id AS "teamId", t.room_id AS "roomId", t.team_number AS "teamNumber", t.capacity,
+         s.label, ep.id AS "eventParticipantId", p.name AS student, ep.check_in_time AS "checkInTime"
+       FROM teams t
+       JOIN seats s ON s.team_id = t.id
+       LEFT JOIN event_participants ep ON ep.id = s.event_participant_id
+       LEFT JOIN participants p ON p.id = ep.participant_id
+       WHERE t.event_id = $1
+       ORDER BY t.room_id, t.team_number, s.position`,
+      [event.id],
+    ),
+    pool.query(
+      `SELECT ep.id, p.name, p.school_college AS "schoolCollege", ep.registration_type AS "registrationType",
+         ep.arrived_at AS "arrivedAt"
+       FROM event_participants ep JOIN participants p ON p.id = ep.participant_id
+       WHERE ep.event_id = $1 AND ep.status = 'waiting'
+       ORDER BY ep.arrived_at NULLS LAST, ep.id LIMIT 500`,
+      [event.id],
+    ),
+    pool.query(
+      `SELECT id, action, details, created_by AS "createdBy", created_at AS "createdAt"
+       FROM allocation_log WHERE event_id = $1 ORDER BY created_at DESC LIMIT 12`,
+      [event.id],
+    ),
+  ]);
+
+  const teams = new Map<number, any>();
+  for (const s of seats.rows) {
+    if (!teams.has(s.teamId)) {
+      teams.set(s.teamId, { id: s.teamId, roomId: s.roomId, teamNumber: s.teamNumber, capacity: s.capacity, seats: [] });
+    }
+    teams.get(s.teamId).seats.push({
+      label: s.label, student: s.student, eventParticipantId: s.eventParticipantId, checkInTime: s.checkInTime,
+    });
+  }
+
+  const tablesBuilt = rooms.rows.some((r) => r.seatCount > 0);
+  const roomList = rooms.rows.map((r) => {
+    // Before activation there are no seat rows yet: approved capacity is the plan.
+    const seatTotal = tablesBuilt ? r.seatCount : r.capacity;
+    return {
+      ...r,
+      available: Math.max(0, seatTotal - r.used),
+      completeTeams: Math.floor(r.capacity / r.teamSize),
+      partialSeats: r.capacity % r.teamSize,
+    };
+  });
+  const c = counts.rows[0];
+  const activeRooms = roomList.filter((r) => r.isActive);
+  const approvedCapacity = activeRooms.reduce((n, r) => n + r.capacity, 0);
+  const availableSeats = activeRooms.reduce((n, r) => n + r.available, 0);
+  res.json({
+    event,
+    stats: {
+      expected: event.expectedStudents,
+      registered: c.registered,
+      walkIns: c.walkIns,
+      participants: c.registered + c.walkIns,
+      arrivals: c.arrivals,
+      assigned: c.assigned,
+      waiting: c.waiting,
+      notArrived: c.registered + c.walkIns - c.arrivals,
+      approvedCapacity,
+      disabledCapacity: roomList.filter((r) => !r.isActive).reduce((n, r) => n + r.capacity, 0),
+      availableSeats,
+      shortage: Math.max(0, c.waiting - availableSeats),
+      aboveExpected: Math.max(0, c.arrivals - event.expectedStudents),
+    },
+    rooms: roomList,
+    teams: [...teams.values()],
+    waiting: waiting.rows,
+    log: log.rows,
+  });
 });
