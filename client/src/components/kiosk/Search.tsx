@@ -176,7 +176,7 @@ export function SingleRegistrationFoundCard({
           onClick={onViewRegistration}
           className="group inline-flex flex-1 cursor-pointer items-center justify-center gap-2.5 rounded-xl bg-niat-maroon px-5 py-3.5 text-base font-bold text-white shadow-[var(--shadow-soft)] transition-all hover:bg-niat-maroon-dark hover:shadow-[var(--shadow-lift)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-niat-maroon/30"
         >
-          <span>{result.seatCode ? 'View my seat pass' : 'View my registration'}</span>
+          <span>{result.seatCode ? 'View my seat' : 'View my registration'}</span>
           <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">
             &rarr;
           </span>

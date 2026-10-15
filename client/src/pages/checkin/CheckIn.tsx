@@ -149,7 +149,10 @@ export default function CheckIn() {
       {screen.kind === 'loading' && (
         <div className="grid flex-1 place-items-center text-lg text-niat-muted"><LoadingDots label="Finding your seat" /></div>
       )}
-      {screen.kind === 'result' && <SeatReveal assignment={screen.assignment} mode={mode} onDone={reset} />}
+      {screen.kind === 'result' && (
+        <SeatReveal assignment={screen.assignment} mode={mode} onDone={reset}
+          event={{ locationName: event.locationName, date: event.date, time: event.time }} />
+      )}
       {screen.kind === 'walkin' && (
         <WalkInForm
           endpoint={`${apiBase}/walk-in`}

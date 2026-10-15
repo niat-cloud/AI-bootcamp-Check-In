@@ -80,7 +80,7 @@ export default function WalkInForm({
 
   return (
     <div className="mx-auto w-full max-w-xl pb-28 pt-1 text-center sm:pb-0 sm:pt-6">
-      {busy && <ProgressPopup title="Creating your pass" steps={STEPS} />}
+      {busy && <ProgressPopup title="Getting your seat" steps={STEPS} />}
 
       <div className="eyebrow animate-fade-up">Welcome to the community</div>
       <h1 className="mt-2 animate-fade-up text-3xl font-extrabold tracking-tight sm:text-5xl">New to the list?</h1>

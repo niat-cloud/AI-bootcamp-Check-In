@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { api, type LocationInfo } from '../../lib/api';
 import { PageHeader, useAdmin } from './AdminLayout';
 
-const slugify = (text: string) => text.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+const slugify = (text: string) => text.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '')
   .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
 
 interface Draft { id?: number; name: string; city: string; state: string; slug: string; isActive: boolean; live?: number }
