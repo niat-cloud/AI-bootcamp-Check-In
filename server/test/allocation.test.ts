@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickTeam, planTeams, type TeamState } from '../src/lib/allocation.js';
+import { pickTeam, planRoomTeams, planTeams, seatLabelsFor, type TeamState } from '../src/lib/allocation.js';
 import { maskPhone, normalizePhone } from '../src/lib/phone.js';
 
 function seededRng(seed: number) {
@@ -74,7 +74,7 @@ describe('pickTeam', () => {
 });
 
 describe('planTeams', () => {
-  it('builds 33 full tables + one 1-seat table for a 100-seat room, numbering continues across rooms', () => {
+  it('builds 33 full tables + one 1-seat table for a 100-seat room; every room restarts at Team 1', () => {
     const plan = planTeams(
       [{ id: 2, capacity: 50, priority: 2 }, { id: 1, capacity: 100, priority: 1 }],
       3,
@@ -84,7 +84,8 @@ describe('planTeams', () => {
     expect(room1.at(-1)).toEqual({ roomId: 1, teamNumber: 34, capacity: 1 });
     expect(room1.reduce((s, t) => s + t.capacity, 0)).toBe(100);
     const room2 = plan.filter((t) => t.roomId === 2);
-    expect(room2[0].teamNumber).toBe(35);
+    expect(room2[0].teamNumber).toBe(1);
+    expect(room2.at(-1)!.teamNumber).toBe(17);
     expect(room2.reduce((s, t) => s + t.capacity, 0)).toBe(50);
   });
 });
@@ -102,5 +103,32 @@ describe('phone helpers', () => {
 
   it('shows only the last 4 digits', () => {
     expect(maskPhone('9876543210')).toBe('••••••3210');
+  });
+});
+
+describe('room-local planning', () => {
+  it('a 60-seat room with teams of 5 has exactly Teams 1-12', () => {
+    const plan = planRoomTeams(60, 5);
+    expect(plan.map((t) => t.teamNumber)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    expect(plan.every((t) => t.capacity === 5)).toBe(true);
+  });
+
+  it('three 60-seat rooms each number 1-12 independently', () => {
+    const plan = planTeams([{ id: 1, capacity: 60, priority: 1 }, { id: 2, capacity: 60, priority: 2 }, { id: 3, capacity: 60, priority: 3 }], 5);
+    for (const roomId of [1, 2, 3]) {
+      const nums = plan.filter((t) => t.roomId === roomId).map((t) => t.teamNumber);
+      expect(nums[0]).toBe(1);
+      expect(nums.at(-1)).toBe(12);
+    }
+  });
+
+  it('respects a per-room team size', () => {
+    const plan = planTeams([{ id: 1, capacity: 20, priority: 1, teamSize: 4 }], 5);
+    expect(plan).toHaveLength(5);
+  });
+
+  it('seat labels extend past the event labels when a room has bigger tables', () => {
+    expect(seatLabelsFor(3, ['A', 'B', 'C'])).toEqual(['A', 'B', 'C']);
+    expect(seatLabelsFor(5, ['A', 'B', 'C'])).toEqual(['A', 'B', 'C', 'D', 'E']);
   });
 });

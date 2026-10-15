@@ -42,8 +42,23 @@ export function getStoredAdminUser(): { email: string } | null {
   }
 }
 
-export async function loginAdmin(email: string, password: string): Promise<{ token: string; email: string }> {
-  const data = await api<{ token: string; email: string }>('/admin/auth/login', {
+export interface LocationRef {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  name: string;
+  role: 'super_admin' | 'location_admin';
+  mustChangePassword: boolean;
+  locations: LocationRef[];
+}
+
+export async function loginAdmin(email: string, password: string): Promise<{ token: string; email: string; user: AdminUser }> {
+  const data = await api<{ token: string; email: string; user: AdminUser }>('/admin/auth/login', {
     method: 'POST',
     body: { email, password },
   });
@@ -59,15 +74,14 @@ export async function logoutAdmin(): Promise<void> {
   }
 }
 
-export async function checkAdminAuth(): Promise<{ authenticated: boolean; email?: string }> {
-  const token = getAdminToken();
-  if (!token) return { authenticated: false };
+/** The signed-in admin, or null when there is no valid session. */
+export async function checkAdminAuth(): Promise<AdminUser | null> {
+  if (!getAdminToken()) return null;
   try {
-    const res = await api<{ authenticated: boolean; email: string }>('/admin/auth/me');
-    return res;
+    return await api<AdminUser>('/admin/auth/me');
   } catch {
     clearAdminAuth();
-    return { authenticated: false };
+    return null;
   }
 }
 
@@ -98,10 +112,13 @@ export async function api<T = any>(
 
   const data = await res.json().catch(() => null);
 
-  if (res.status === 401 && path.startsWith('/events')) {
-    // Session expired for admin call
+  if (res.status === 401 && token && !path.startsWith('/admin/auth/login')) {
+    // Session expired, or the account was disabled.
     clearAdminAuth();
     window.dispatchEvent(new CustomEvent('admin_unauthorized'));
+  }
+  if (res.status === 403 && data?.code === 'PASSWORD_CHANGE_REQUIRED') {
+    window.dispatchEvent(new CustomEvent('admin_password_change'));
   }
 
   if (!res.ok && !data) {
@@ -125,7 +142,24 @@ export interface EventInfo {
   poolFillThreshold: number;
   participantCount?: number;
   checkedInCount?: number;
+  locationId: number | null;
+  locationName: string | null;
+  locationSlug: string | null;
+  slug: string | null;
+  /** e.g. /hyderabad/18-oct-2026, the page students open from the QR code. */
+  publicPath: string | null;
 }
+
+export interface LocationInfo extends LocationRef {
+  city: string;
+  state: string;
+  isActive: boolean;
+  eventCount?: number;
+  liveCount?: number;
+  adminCount?: number;
+}
+
+export const publicUrl = (path: string) => `${window.location.origin}${path}`;
 
 export interface Room {
   id: number;
@@ -134,6 +168,9 @@ export interface Room {
   priority: number;
   used: number;
   teamCount: number;
+  teamSize: number;
+  teamSizeOverride: number | null;
+  isActive: boolean;
   plannedTeams: number;
   firstTeam: number | null;
   lastTeam: number | null;

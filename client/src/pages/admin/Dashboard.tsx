@@ -219,7 +219,7 @@ export default function Dashboard() {
     if (topTeam && topTeam.assigned > 0) {
       observations.push({
         title: 'TEAM DISTRIBUTION',
-        value: `Team ${topTeam.teamNumber} · ${topTeam.assigned}/${topTeam.capacity}`,
+        value: `${topTeam.roomName ? `${topTeam.roomName} · ` : ''}Team ${topTeam.teamNumber} · ${topTeam.assigned}/${topTeam.capacity}`,
         desc: `${fillingTeams.length} active teams currently have assigned students.`,
       });
     } else {
@@ -243,8 +243,9 @@ export default function Dashboard() {
     if (fullTeams.length > 0) {
       items.push({
         level: 'warn',
-        message: `Team ${fullTeams.map((t) => t.teamNumber).join(', ')} is 100% full`,
-        sub: '3 / 3 seats occupied · Next attendees will route to adjacent tables.',
+        // Team numbers restart in every room, so name the room with each team.
+        message: `${fullTeams.length === 1 ? 'Team' : 'Teams'} ${fullTeams.slice(0, 6).map((t) => `${t.teamNumber}${t.roomName ? ` (${t.roomName})` : ''}`).join(', ')}${fullTeams.length > 6 ? ` +${fullTeams.length - 6} more` : ''} ${fullTeams.length === 1 ? 'is' : 'are'} 100% full`,
+        sub: 'Next attendees will route to tables with open seats.',
       });
     }
 
@@ -328,12 +329,12 @@ export default function Dashboard() {
             <span className="text-sm">↻</span> Refresh
           </button>
           <Link
-            to="/"
+            to={`/gate/${event.id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-xl bg-niat-maroon px-4 py-2 text-xs font-bold text-white shadow-xs transition-all hover:bg-niat-maroon-dark hover:shadow-sm"
           >
-            <span>↗ Open Kiosk Check-In</span>
+            <span>↗ Open Gate Kiosk</span>
           </Link>
         </div>
       </div>
@@ -909,7 +910,10 @@ export default function Dashboard() {
                     }`}
                   >
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-black">TEAM {String(t.teamNumber).padStart(2, '0')}</span>
+                      <span className="min-w-0 truncate font-black" title={t.roomName ? `${t.roomName} · Team ${t.teamNumber}` : undefined}>
+                        TEAM {String(t.teamNumber).padStart(2, '0')}
+                        {t.roomName && <span className="ml-1 font-semibold opacity-60">· {t.roomName}</span>}
+                      </span>
                       {isFull && <span className="h-2 w-2 rounded-full bg-emerald-600" />}
                       {isPartial && <span className="h-2 w-2 rounded-full bg-niat-gold" />}
                       {isEmpty && <span className="h-2 w-2 rounded-full bg-stone-300" />}

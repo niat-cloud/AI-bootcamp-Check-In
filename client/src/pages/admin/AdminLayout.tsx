@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useOutletContext } from 'react-router-dom';
 import logo from '../../assets/niat-logo.png';
-import { api, checkAdminAuth, formatDate, logoutAdmin, type EventInfo } from '../../lib/api';
+import { api, checkAdminAuth, formatDate, logoutAdmin, type AdminUser, type EventInfo } from '../../lib/api';
+import ChangePassword from './ChangePassword';
 import AdminLogin from './Login';
 
 export interface AdminContext {
   event: EventInfo | null;
   reload: () => Promise<void>;
   selectEvent: (id: number | null) => void;
+  user: AdminUser;
+  /** Re-count access requests waiting for approval (super admin badge). */
+  refreshPending: () => void;
 }
 
 export const useAdmin = () => useOutletContext<AdminContext>();
@@ -27,6 +31,7 @@ interface NavSection {
     label: string;
     end?: boolean;
     icon: React.ReactNode;
+    badge?: number;
   }[];
 }
 
@@ -116,10 +121,38 @@ const navSections: NavSection[] = [
   },
 ];
 
+const platformIcon = (
+  <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h4l3 8 4-16 3 8h4" />
+  </svg>
+);
+const locationIcon = (
+  <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7-6.2-7-11.5A7 7 0 0112 2.5a7 7 0 017 7C19 14.8 12 21 12 21z" />
+    <circle cx="12" cy="9.5" r="2.5" />
+  </svg>
+);
+const adminsIcon = (
+  <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+  </svg>
+);
+
+/** Overview for everyone; locations and admin approvals for the super admin only. */
+function platformSection(user: AdminUser, pendingAdmins: number): NavSection {
+  const items: NavSection['items'] = [{ to: '/admin/overview', label: 'All Locations', icon: platformIcon }];
+  if (user.role === 'super_admin') {
+    items.push({ to: '/admin/locations', label: 'Locations', icon: locationIcon });
+    items.push({ to: '/admin/admins', label: 'Admins', icon: adminsIcon, badge: pendingAdmins || undefined });
+  }
+  return { title: 'PLATFORM', items };
+}
+
 export default function AdminLayout() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [adminEmail, setAdminEmail] = useState<string>('admin@niat.edu');
+  const [user, setUser] = useState<AdminUser | null>(null);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [pendingAdmins, setPendingAdmins] = useState(0);
 
   const [event, setEvent] = useState<EventInfo | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -132,34 +165,49 @@ export default function AdminLayout() {
     }
   });
 
-  // Verify authentication on mount
+  const refreshUser = useCallback(() => checkAdminAuth().then((u) => {
+    setUser(u);
+    setAuthChecking(false);
+  }), []);
+
+  // Verify the session on mount, and again whenever the server says it changed.
   useEffect(() => {
-    checkAdminAuth().then((res) => {
-      setIsAuthenticated(res.authenticated);
-      if (res.email) setAdminEmail(res.email);
-      setAuthChecking(false);
-    });
-
-    const onUnauthorized = () => {
-      setIsAuthenticated(false);
-    };
+    refreshUser();
+    const onUnauthorized = () => setUser(null);
     window.addEventListener('admin_unauthorized', onUnauthorized);
-    return () => window.removeEventListener('admin_unauthorized', onUnauthorized);
-  }, []);
+    window.addEventListener('admin_password_change', refreshUser);
+    return () => {
+      window.removeEventListener('admin_unauthorized', onUnauthorized);
+      window.removeEventListener('admin_password_change', refreshUser);
+    };
+  }, [refreshUser]);
 
+  const ready = Boolean(user && !user.mustChangePassword);
+
+  // Only the newest reload may set the event: replies from the remote database can arrive out of
+  // order, and an older reply must never switch the admin back to a previous event.
+  const latestReload = useRef(0);
   const reload = useCallback(async () => {
+    const ticket = ++latestReload.current;
     let e: EventInfo | null = null;
     if (selectedId) e = await api<EventInfo>(`/events/${selectedId}`).catch(() => null);
-    if (!e) e = await api<EventInfo | null>('/events/current');
+    if (!e) e = await api<EventInfo | null>('/events/current').catch(() => null);
+    if (ticket !== latestReload.current) return;
     setEvent(e);
     setLoaded(true);
   }, [selectedId]);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      reload();
-    }
-  }, [isAuthenticated, reload]);
+    if (ready) reload();
+  }, [ready, reload]);
+
+  const refreshPending = useCallback(() => {
+    if (user?.role !== 'super_admin') return;
+    api<{ status: string }[]>('/platform/admins')
+      .then((list) => setPendingAdmins(list.filter((a) => a.status === 'pending').length))
+      .catch(() => {});
+  }, [user?.role]);
+  useEffect(() => { if (ready) refreshPending(); }, [ready, refreshPending]);
 
   const selectEvent = (id: number | null) => {
     try {
@@ -173,7 +221,9 @@ export default function AdminLayout() {
 
   const handleSignOut = async () => {
     await logoutAdmin();
-    setIsAuthenticated(false);
+    setUser(null);
+    setEvent(null);
+    setLoaded(false);
   };
 
   if (authChecking) {
@@ -184,23 +234,17 @@ export default function AdminLayout() {
     );
   }
 
-  // If not authenticated, render Login screen
-  if (!isAuthenticated) {
-    return (
-      <AdminLogin
-        onLoginSuccess={(email) => {
-          setIsAuthenticated(true);
-          setAdminEmail(email);
-        }}
-      />
-    );
-  }
+  if (!user) return <AdminLogin onLoginSuccess={(u) => setUser(u)} />;
+  if (user.mustChangePassword) return <ChangePassword user={user} forced onDone={setUser} onSignOut={handleSignOut} />;
+
+  const sections = [platformSection(user, pendingAdmins), ...navSections];
+  const roleLabel = user.role === 'super_admin'
+    ? 'Super Admin'
+    : user.locations.map((l) => l.name).join(', ') || 'Location Admin';
 
   return (
     <div className="flex min-h-screen bg-[#F8F9FA]">
-      {/* Modern, Structured Operations Sidebar */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-niat-line bg-white shadow-2xs md:flex">
-        {/* Brand header */}
         <div className="border-b border-niat-line px-5 py-4">
           <div className="flex items-center gap-2.5">
             <img src={logo} alt="NIAT" className="h-8 w-auto object-contain" />
@@ -210,7 +254,6 @@ export default function AdminLayout() {
             </div>
           </div>
 
-          {/* Active Event Card Badge */}
           {event ? (
             <div className="mt-3.5 rounded-xl border border-niat-line/80 bg-niat-warm-white p-2.5">
               <div className="flex items-center justify-between gap-1">
@@ -222,6 +265,7 @@ export default function AdminLayout() {
                   </span>
                 )}
               </div>
+              {event.locationName && <div className="mt-0.5 truncate text-[11px] font-semibold text-niat-maroon">📍 {event.locationName}</div>}
               <div className="mt-1 flex items-center gap-2 text-[11px] text-niat-muted">
                 <span className={`rounded-full px-1.5 py-0.2 font-semibold capitalize ${statusBadge[event.status]}`}>
                   {event.status}
@@ -230,13 +274,12 @@ export default function AdminLayout() {
               </div>
             </div>
           ) : loaded ? (
-            <div className="mt-2 text-xs text-niat-muted">No active event selected</div>
+            <div className="mt-2 text-xs text-niat-muted">No event selected</div>
           ) : null}
         </div>
 
-        {/* Categorized Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
-          {navSections.map((section) => (
+          {sections.map((section) => (
             <div key={section.title}>
               <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-niat-muted/70">
                 {section.title}
@@ -256,7 +299,12 @@ export default function AdminLayout() {
                     }
                   >
                     {n.icon}
-                    <span>{n.label}</span>
+                    <span className="flex-1">{n.label}</span>
+                    {n.badge ? (
+                      <span className="rounded-full bg-niat-maroon px-1.5 py-0.5 text-[10px] font-black leading-none text-white" aria-label={`${n.badge} pending`}>
+                        {n.badge}
+                      </span>
+                    ) : null}
                   </NavLink>
                 ))}
               </div>
@@ -264,13 +312,11 @@ export default function AdminLayout() {
           ))}
         </nav>
 
-        {/* Bottom User Profile + Quick-Launch Action */}
         <div className="border-t border-niat-line p-3 bg-white space-y-2">
-          {/* Authenticated Admin Account Badge */}
           <div className="flex items-center justify-between rounded-xl border border-niat-line/70 bg-niat-warm-white px-2.5 py-2 text-xs">
             <div className="min-w-0 pr-2">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-niat-muted">Admin Account</div>
-              <div className="truncate font-bold text-niat-text text-[11px]">{adminEmail}</div>
+              <div className="truncate text-[10px] font-bold uppercase tracking-wider text-niat-muted" title={roleLabel}>{roleLabel}</div>
+              <div className="truncate font-bold text-niat-text text-[11px]" title={user.email}>{user.name || user.email}</div>
             </div>
             <button
               type="button"
@@ -282,23 +328,25 @@ export default function AdminLayout() {
             </button>
           </div>
 
-          <NavLink
-            to="/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 rounded-xl bg-niat-maroon px-3 py-2.5 text-xs font-bold text-white shadow-xs transition-all hover:bg-niat-maroon-dark hover:shadow-sm"
-          >
-            <span>↗ Open Check-in Kiosk</span>
-          </NavLink>
+          {event?.publicPath && event.status !== 'completed' && (
+            <div className="grid grid-cols-2 gap-1.5">
+              <a href={event.publicPath} target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center rounded-xl border border-niat-maroon/25 bg-white px-2 py-2 text-[11px] font-bold text-niat-maroon hover:bg-niat-pink">
+                ↗ Student Page
+              </a>
+              <a href={`/gate/${event.id}`} target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center rounded-xl bg-niat-maroon px-2 py-2 text-[11px] font-bold text-white shadow-xs hover:bg-niat-maroon-dark">
+                ↗ Gate Kiosk
+              </a>
+            </div>
+          )}
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <div className="min-w-0 flex-1">
-        {/* Mobile Navbar */}
         <div className="flex items-center justify-between border-b border-niat-line bg-white px-4 py-2.5 md:hidden">
           <div className="flex gap-2 overflow-x-auto">
-            {navSections.flatMap((s) => s.items).map((n) => (
+            {sections.flatMap((s) => s.items).map((n) => (
               <NavLink
                 key={n.to}
                 to={n.to}
@@ -309,7 +357,7 @@ export default function AdminLayout() {
                   }`
                 }
               >
-                {n.label}
+                {n.label}{n.badge ? ` (${n.badge})` : ''}
               </NavLink>
             ))}
           </div>
@@ -325,7 +373,7 @@ export default function AdminLayout() {
 
         <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
           {loaded ? (
-            <Outlet context={{ event, reload, selectEvent } satisfies AdminContext} />
+            <Outlet context={{ event, reload, selectEvent, user, refreshPending } satisfies AdminContext} />
           ) : (
             <div className="p-8 text-center text-niat-muted">Loading command center…</div>
           )}
@@ -361,7 +409,7 @@ export function NoEvent() {
       <div className="text-4xl" aria-hidden="true">
         📅
       </div>
-      <h2 className="mt-3 text-xl font-bold text-niat-text">No active event selected</h2>
+      <h2 className="mt-3 text-xl font-bold text-niat-text">No event selected</h2>
       <p className="mt-1 text-sm text-niat-muted">Configure an event to view the live operations command center.</p>
       <NavLink to="/admin/setup" className="btn-primary mt-5">
         Create an event

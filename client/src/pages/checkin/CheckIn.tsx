@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError, type SearchResult, type SeatAssignment } from '../../lib/api';
+import { Link, useParams } from 'react-router-dom';
+import { api, ApiError, checkAdminAuth, type EventInfo, type SearchResult, type SeatAssignment } from '../../lib/api';
 import { CtaButton, LoadingDots } from '../../components/kiosk/CtaButton';
 import { EmptyState, Notice } from '../../components/kiosk/Form';
 import { SearchBox, SearchResultCard } from '../../components/kiosk/Search';
 import { SeatReveal } from '../../components/kiosk/SeatReveal';
-import { KioskShell } from '../../components/kiosk/Shell';
+import { CalmCard, KioskShell } from '../../components/kiosk/Shell';
 import { StudentCard } from '../../components/kiosk/StudentCard';
 import { ProgressPopup } from '../../components/kiosk/ProgressPopup';
-import { atLeast, forgetSeat, recallSeat, rememberSeat, useIsMobile } from '../../lib/device';
+import { atLeast, useIsMobile } from '../../lib/device';
 import WalkInForm from './WalkInForm';
 
 type Screen =
@@ -18,61 +19,52 @@ type Screen =
   | { kind: 'walkin' }
   | { kind: 'blocked'; title: string; message: string };
 
-interface Status {
-  event: { id: number; name: string; date: string; time: string } | null;
-  lastEvent?: { name: string; status: string } | null;
-}
-
 // The full staggered intro plays once per page load; later returns to search are instant.
 let introPlayed = false;
 
+/**
+ * Gate kiosk for volunteers: /gate/:eventId. Searches by name or phone, so it needs an admin of the
+ * event's location to be signed in on this device. Students use the public event link instead.
+ */
 export default function CheckIn() {
-  const [status, setStatus] = useState<Status | null>(null);
+  const { eventId = '' } = useParams();
+  const apiBase = `/events/${encodeURIComponent(eventId)}/gate`;
+  const [auth, setAuth] = useState<'checking' | 'ok' | 'signed-out'>('checking');
+  const [event, setEvent] = useState<EventInfo | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: 'search' });
   const [query, setQuery] = useState('');
   const isMobile = useIsMobile();
   const mode = isMobile ? 'personal' : 'kiosk';
 
-  const loadStatus = useCallback(() => {
-    api<Status>('/checkin/status').then(setStatus).catch(() => setStatus({ event: null }));
+  useEffect(() => {
+    checkAdminAuth().then((u) => setAuth(u && !u.mustChangePassword ? 'ok' : 'signed-out'));
+    const onUnauthorized = () => setAuth('signed-out');
+    window.addEventListener('admin_unauthorized', onUnauthorized);
+    return () => window.removeEventListener('admin_unauthorized', onUnauthorized);
   }, []);
-  useEffect(loadStatus, [loadStatus]);
+
+  const loadEvent = useCallback(() => {
+    setLoadError(null);
+    api<EventInfo>(`/events/${encodeURIComponent(eventId)}`).then(setEvent).catch((err) => setLoadError((err as Error).message));
+  }, [eventId]);
+  useEffect(() => { if (auth === 'ok') loadEvent(); }, [auth, loadEvent]);
 
   const reset = useCallback(() => {
     setQuery('');
     setScreen({ kind: 'search' });
   }, []);
 
-  const eventId = status?.event?.id;
-
-  // A student's own phone reopens straight to their pass.
-  useEffect(() => {
-    if (!eventId || !isMobile) return;
-    const saved = recallSeat(eventId);
-    if (!saved) return;
-    setScreen({ kind: 'loading' });
-    api<SeatAssignment>(`/checkin/participant/${saved}`)
-      .then((a) => setScreen(a.seatCode ? { kind: 'result', assignment: { ...a, alreadyAssigned: true } } : { kind: 'search' }))
-      .catch(() => { forgetSeat(eventId); setScreen({ kind: 'search' }); });
-  }, [eventId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const showSeat = (assignment: SeatAssignment) => {
-    if (isMobile && eventId) rememberSeat(eventId, assignment.eventParticipantId);
-    setScreen({ kind: 'result', assignment });
-  };
-
-  const finishSeat = () => {
-    if (isMobile && eventId) forgetSeat(eventId);
-    reset();
-  };
+  const showSeat = (assignment: SeatAssignment) => setScreen({ kind: 'result', assignment });
 
   /** Turns known API errors into a full-screen state; rethrows anything else for inline display. */
   const handleError = (err: unknown) => {
     const e = err as ApiError;
     if (e.code === 'VENUE_FULL') {
-      setScreen({ kind: 'blocked', title: 'The venue is full', message: 'All seats for today are taken. Please contact an organizer — they will help you right away.' });
-    } else if (e.code === 'NO_ACTIVE_EVENT' || e.code === 'EVENT_NOT_ACTIVE') {
-      loadStatus();
+      // The server has already recorded the arrival on the waiting list.
+      setScreen({ kind: 'blocked', title: "You're on the waiting list", message: "You're checked in, but every seat is taken right now. Please wait near the desk — an organizer will give you a seat shortly." });
+    } else if (e.code === 'EVENT_NOT_ACTIVE') {
+      loadEvent();
       setScreen({ kind: 'blocked', title: 'Check-in is closed', message: e.message });
     } else {
       throw err;
@@ -86,36 +78,56 @@ export default function CheckIn() {
     }
     // Returning student: go straight to their existing seat — never assign again.
     setScreen({ kind: 'loading' });
-    api<SeatAssignment>(`/checkin/participant/${student.eventParticipantId}`)
+    api<SeatAssignment>(`${apiBase}/participant/${student.eventParticipantId}`)
       .then(showSeat)
       .catch((err) => {
         try { handleError(err); } catch { setScreen({ kind: 'confirm', student }); }
       });
   };
 
-  if (!status) {
+  if (auth === 'signed-out') {
+    return (
+      <KioskShell>
+        <CalmCard icon="🔐" title="Gate kiosk needs an admin"
+          message="Sign in to the admin panel on this device, then open the gate kiosk again from Event Setup. Students can use the event's public link or QR code instead."
+          action={<Link to="/admin" className="btn-primary">Sign in</Link>} />
+      </KioskShell>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <KioskShell>
+        <CalmCard icon="📶" title="Couldn't open this event" message={loadError}
+          action={<CtaButton variant="ghost" size="md" arrow={false} onClick={loadEvent}>Try again</CtaButton>} />
+      </KioskShell>
+    );
+  }
+
+  if (!event) {
     return <KioskShell><div className="grid flex-1 place-items-center text-niat-muted"><LoadingDots label="Getting things ready" /></div></KioskShell>;
   }
 
-  if (!status.event) {
+  if (event.status !== 'active') {
     return (
-      <KioskShell>
+      <KioskShell date={event.date} place={event.locationName ?? undefined}>
         <CalmCard
           icon="🌙"
-          title="Check-in opens soon"
-          message={status.lastEvent?.status === 'completed'
-            ? "Today's AI Bootcamp check-in has closed. Thank you for being part of it!"
-            : 'An organizer will open check-in shortly. Hang tight!'}
-          action={<CtaButton variant="ghost" size="md" arrow={false} onClick={loadStatus}>Refresh</CtaButton>}
+          title={event.status === 'completed' ? 'Check-in has closed' : 'Check-in opens soon'}
+          message={event.status === 'completed'
+            ? "This AI Bootcamp event is completed. Thank you for being part of it!"
+            : 'Activate the event in Event Setup to open check-in.'}
+          action={<CtaButton variant="ghost" size="md" arrow={false} onClick={loadEvent}>Refresh</CtaButton>}
         />
       </KioskShell>
     );
   }
 
   return (
-    <KioskShell date={status.event.date} onHome={reset}>
+    <KioskShell date={event.date} place={event.locationName ?? undefined} onHome={reset}>
       {screen.kind === 'search' && (
         <SearchScreen
+          apiBase={apiBase}
           query={query}
           setQuery={setQuery}
           onSelect={select}
@@ -126,6 +138,7 @@ export default function CheckIn() {
       )}
       {screen.kind === 'confirm' && (
         <ConfirmScreen
+          apiBase={apiBase}
           student={screen.student}
           onBack={() => setScreen({ kind: 'search' })}
           onAssigned={showSeat}
@@ -136,9 +149,10 @@ export default function CheckIn() {
       {screen.kind === 'loading' && (
         <div className="grid flex-1 place-items-center text-lg text-niat-muted"><LoadingDots label="Finding your seat" /></div>
       )}
-      {screen.kind === 'result' && <SeatReveal assignment={screen.assignment} mode={mode} onDone={finishSeat} />}
+      {screen.kind === 'result' && <SeatReveal assignment={screen.assignment} mode={mode} onDone={reset} />}
       {screen.kind === 'walkin' && (
         <WalkInForm
+          endpoint={`${apiBase}/walk-in`}
           initialName={/\d/.test(query) ? '' : query.trim()}
           initialPhone={/^[\d\s+-]+$/.test(query.trim()) ? query.trim() : ''}
           onCancel={() => setScreen({ kind: 'search' })}
@@ -154,19 +168,8 @@ export default function CheckIn() {
   );
 }
 
-function CalmCard({ icon, title, message, action }: { icon: string; title: string; message: string; action?: React.ReactNode }) {
-  return (
-    <div className="mx-auto mt-10 w-full max-w-xl animate-scale-in rounded-[var(--radius-card)] border border-niat-line bg-white/90 p-10 text-center shadow-[var(--shadow-card)] backdrop-blur sm:mt-20">
-      <div className="text-5xl" aria-hidden>{icon}</div>
-      <div className="eyebrow mt-5">AI Bootcamp</div>
-      <h1 className="mt-2 text-3xl font-extrabold tracking-tight">{title}</h1>
-      <p className="mx-auto mt-3 max-w-md text-lg text-niat-muted">{message}</p>
-      {action && <div className="mt-8">{action}</div>}
-    </div>
-  );
-}
-
-function SearchScreen({ query, setQuery, onSelect, onWalkIn, onError, mobile }: {
+function SearchScreen({ apiBase, query, setQuery, onSelect, onWalkIn, onError, mobile }: {
+  apiBase: string;
   query: string;
   setQuery: (q: string) => void;
   onSelect: (s: SearchResult) => void;
@@ -200,7 +203,7 @@ function SearchScreen({ query, setQuery, onSelect, onWalkIn, onError, mobile }: 
     setBusy(true);
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      api<SearchResult[]>(`/checkin/search?q=${encodeURIComponent(q)}`, { signal: controller.signal })
+      api<SearchResult[]>(`${apiBase}/search?q=${encodeURIComponent(q)}`, { signal: controller.signal })
         .then((r) => {
           setResults(r);
           setSearchedFor(q);
@@ -306,7 +309,8 @@ function SearchScreen({ query, setQuery, onSelect, onWalkIn, onError, mobile }: 
   );
 }
 
-function ConfirmScreen({ student, onBack, onAssigned, onError, mobile }: {
+function ConfirmScreen({ apiBase, student, onBack, onAssigned, onError, mobile }: {
+  apiBase: string;
   student: SearchResult;
   onBack: () => void;
   onAssigned: (a: SeatAssignment) => void;
@@ -323,7 +327,7 @@ function ConfirmScreen({ student, onBack, onAssigned, onError, mobile }: {
     setBusy(true);
     setError(null);
     try {
-      onAssigned(await atLeast(api<SeatAssignment>('/checkin/assign', { body: { eventParticipantId: student.eventParticipantId } }), 900));
+      onAssigned(await atLeast(api<SeatAssignment>(`${apiBase}/assign`, { body: { eventParticipantId: student.eventParticipantId } }), 900));
     } catch (err) {
       setBusy(false);
       try { onError(err); } catch { setError((err as Error).message); }

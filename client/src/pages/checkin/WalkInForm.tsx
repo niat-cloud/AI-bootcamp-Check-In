@@ -9,12 +9,15 @@ const PHONE = /^(?:\+?91[\s-]?|0)?[6-9]\d{4}[\s-]?\d{5}$/;
 const STEPS = ['Saving your details', 'Finding your team', 'Reserving your seat'];
 
 export default function WalkInForm({
+  endpoint,
   initialName,
   initialPhone,
   onCancel,
   onAssigned,
   onError,
 }: {
+  /** The gate's walk-in endpoint for this event. */
+  endpoint: string;
   initialName: string;
   initialPhone: string;
   onCancel: () => void;
@@ -64,7 +67,7 @@ export default function WalkInForm({
     setBusy(true);
     setServerError(null);
     try {
-      onAssigned(await atLeast(api<SeatAssignment>('/checkin/walk-in', { body: form }), 900));
+      onAssigned(await atLeast(api<SeatAssignment>(endpoint, { body: form }), 900));
     } catch (err) {
       setBusy(false);
       try {

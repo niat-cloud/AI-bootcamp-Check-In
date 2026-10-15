@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import logo from '../../assets/niat-logo.png';
-import { loginAdmin } from '../../lib/api';
+import { ApiError, loginAdmin, type AdminUser } from '../../lib/api';
 
-export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (email: string) => void }) {
-  const [email, setEmail] = useState('admin@niat.edu');
+export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (user: AdminUser) => void }) {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,15 +20,15 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (email
 
     setBusy(true);
     setError(null);
+    setPending(false);
 
     try {
       const res = await loginAdmin(email.trim(), password);
       setBusy(false);
-      if (onLoginSuccess) {
-        onLoginSuccess(res.email);
-      }
+      onLoginSuccess?.(res.user);
     } catch (err) {
       setBusy(false);
+      setPending((err as ApiError).code === 'ACCOUNT_PENDING');
       setError((err as Error).message || 'Invalid administrator credentials.');
     }
   };
@@ -47,7 +48,7 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (email
             Command Center Login
           </h1>
           <p className="mt-1 text-xs text-niat-muted">
-            Enter your single administrator credentials to manage live event operations.
+            Sign in with your admin account to manage your location's events.
           </p>
         </div>
 
@@ -56,10 +57,10 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (email
           {error && (
             <div
               role="alert"
-              className="mb-5 flex items-start gap-2.5 rounded-xl border border-niat-maroon/20 bg-niat-pink/80 p-3 text-xs font-semibold text-niat-maroon-dark animate-fade-in"
+              className={`mb-5 flex items-start gap-2.5 rounded-xl border p-3 text-xs font-semibold animate-fade-in ${pending ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-niat-maroon/20 bg-niat-pink/80 text-niat-maroon-dark'}`}
             >
               <span className="mt-0.5 text-sm" aria-hidden="true">
-                ⚠
+                {pending ? '⏳' : '⚠'}
               </span>
               <span>{error}</span>
             </div>
@@ -77,7 +78,7 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (email
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@niat.edu"
+                placeholder="you@niat.edu"
                 className="w-full rounded-xl border border-niat-line bg-white px-3.5 py-2.5 text-sm font-medium text-niat-text outline-none transition-all placeholder:text-stone-400 focus:border-niat-maroon focus:ring-4 focus:ring-niat-maroon/10"
               />
             </div>
@@ -129,10 +130,10 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (email
             </button>
           </form>
 
-          {/* Single admin note */}
-          <div className="mt-5 rounded-xl border border-niat-line/70 bg-niat-warm-white p-3 text-center text-[11px] text-niat-muted">
-            <span className="font-bold text-niat-text">🔒 Single Administrator Account</span>
-            <div className="mt-0.5">Configured via environment variables for AI Bootcamp event coordination.</div>
+          <div className="mt-5 rounded-xl border border-niat-line/70 bg-niat-warm-white p-3 text-center text-xs text-niat-muted">
+            New location admin?{' '}
+            <Link to="/admin/signup" className="font-bold text-niat-maroon hover:underline">Request access</Link>
+            <div className="mt-0.5 text-[11px]">The super admin approves each request and assigns your location.</div>
           </div>
         </div>
 
@@ -142,7 +143,7 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (email
             to="/"
             className="text-xs font-semibold text-niat-muted transition-colors hover:text-niat-maroon"
           >
-            &larr; Back to Attendee Check-In Kiosk
+            &larr; Back to live events
           </Link>
         </div>
       </div>
