@@ -128,6 +128,31 @@ export async function api<T = any>(
   return data as T;
 }
 
+/** Downloads an admin file (an export) with the session token, saved under the server's file name. */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const token = getAdminToken();
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } catch {
+    throw new ApiError(0, 'NETWORK', 'Cannot reach the server. Check the internet connection.');
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError(res.status, data?.code ?? 'ERROR', data?.message ?? `Download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const name = res.headers.get('content-disposition')?.match(/filename=["']?([^"';]+)["']?/i)?.[1];
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name ?? fallbackName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export interface EventInfo {
   id: number;
   name: string;

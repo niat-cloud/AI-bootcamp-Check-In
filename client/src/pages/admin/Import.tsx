@@ -55,7 +55,10 @@ export default function Import() {
     const seen = new Map<string, number>();
     return sheet.rows.map((r) => {
       const get = (k: FieldKey) => (mapping[k] >= 0 ? r.cells[mapping[k]] : '');
-      const values = { name: get('name'), phone: get('phone'), schoolCollege: get('schoolCollege'), className: get('className'), parentPhone: get('parentPhone') };
+      const values = {
+        name: get('name'), phone: get('phone'), schoolCollege: get('schoolCollege'), className: get('className'),
+        parentPhone: get('parentPhone'), location: get('location'), source: get('source'),
+      };
       let issue: Issue | null = null;
       const phone = normalizePhone(values.phone);
       if (r.cells.every((c) => !c)) issue = 'Empty row';
@@ -71,6 +74,7 @@ export default function Import() {
   const valid = analysed?.filter((r) => !r.issue) ?? [];
   const problems = analysed?.filter((r) => r.issue) ?? [];
   const missingRequired = mapping ? FIELDS.filter((f) => f.required && mapping[f.key] < 0) : [];
+  const withoutSource = mapping && mapping.source >= 0 ? valid.filter((r) => !r.source).length : 0;
 
   const doImport = async () => {
     if (!event || !analysed) return;
@@ -111,7 +115,7 @@ export default function Import() {
         >
           <span className="text-4xl">📄</span>
           <span className="mt-2 text-lg font-semibold">Drop an Excel or CSV file here, or click to choose</span>
-          <span className="mt-1 text-sm text-niat-muted">Needs columns for Name, Phone and School/College (any order). Class and Parent Phone are optional.</span>
+          <span className="mt-1 text-sm text-niat-muted">Needs columns for Name, Phone, School/College and Source (any order). Class, Parent Phone and Area are optional.</span>
           <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
         </label>
         {error && <p className="mt-4 rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}
@@ -130,7 +134,7 @@ export default function Import() {
             </button>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="mt-5 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {FIELDS.map((f) => (
               <label key={f.key} className="block">
                 <span className="label">{mapping[f.key] >= 0 ? '✓' : f.required ? '✗' : '○'} {f.label}{f.required ? '' : ' (optional)'}</span>
@@ -148,6 +152,12 @@ export default function Import() {
           {missingRequired.length > 0 && (
             <p className="mt-3 text-sm text-rose-600">Choose a column for: {missingRequired.map((f) => f.label).join(', ')}</p>
           )}
+          <p className="mt-3 text-sm text-niat-muted">Source is only visible to admins. Students never see it when they check in.</p>
+          {withoutSource > 0 && (
+            <p className="mt-1 text-sm text-amber-700">
+              {withoutSource} student{withoutSource > 1 ? 's have' : ' has'} no source in the file. They will be imported and shown as “Not specified” on the dashboard.
+            </p>
+          )}
 
           <h3 className="mt-6 font-semibold">Preview (first 8 rows)</h3>
           <PreviewTable rows={valid.slice(0, 8)} />
@@ -158,6 +168,7 @@ export default function Import() {
                 <h3 className="font-semibold text-amber-800">Rows that need attention ({problems.length})</h3>
                 <button className="btn-secondary text-sm" onClick={() => downloadCsv('rows-to-fix.csv', problems.map((p) => ({
                   Row: p.rowNumber, Issue: p.issue, Name: p.name, Phone: p.phone, 'School/College': p.schoolCollege, Class: p.className,
+                  Area: p.location, Source: p.source,
                 })))}>Download list</button>
               </div>
               <PreviewTable rows={problems.slice(0, 50)} showIssue />
@@ -173,12 +184,15 @@ export default function Import() {
   );
 }
 
-function PreviewTable({ rows, showIssue }: { rows: { rowNumber: number; name: string; phone: string; schoolCollege: string; className: string; issue: string | null }[]; showIssue?: boolean }) {
+function PreviewTable({ rows, showIssue }: {
+  rows: { rowNumber: number; name: string; phone: string; schoolCollege: string; className: string; location: string; source: string; issue: string | null }[];
+  showIssue?: boolean;
+}) {
   return (
     <div className="mt-2 overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead className="border-b border-niat-line text-niat-muted">
-          <tr><th className="py-2 pr-3">Row</th>{showIssue && <th className="pr-3">Issue</th>}<th className="pr-3">Name</th><th className="pr-3">Phone</th><th className="pr-3">School/College</th><th>Class</th></tr>
+          <tr><th className="py-2 pr-3">Row</th>{showIssue && <th className="pr-3">Issue</th>}<th className="pr-3">Name</th><th className="pr-3">Phone</th><th className="pr-3">School/College</th><th className="pr-3">Class</th><th className="pr-3">Area</th><th>Source</th></tr>
         </thead>
         <tbody>
           {rows.map((r) => (
@@ -188,7 +202,9 @@ function PreviewTable({ rows, showIssue }: { rows: { rowNumber: number; name: st
               <td className="pr-3">{r.name}</td>
               <td className="pr-3 font-mono">{r.phone}</td>
               <td className="pr-3">{r.schoolCollege}</td>
-              <td>{r.className}</td>
+              <td className="pr-3">{r.className}</td>
+              <td className="pr-3">{r.location}</td>
+              <td>{r.source}</td>
             </tr>
           ))}
         </tbody>
