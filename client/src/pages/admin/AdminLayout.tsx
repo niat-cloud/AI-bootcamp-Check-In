@@ -245,43 +245,36 @@ export default function AdminLayout() {
   return (
     <div className="flex min-h-screen bg-[#F8F9FA]">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-niat-line bg-white shadow-2xs md:flex">
-        <div className="border-b border-niat-line px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <img src={logo} alt="NIAT" className="h-8 w-auto object-contain" />
-            <div className="leading-none">
-              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-niat-maroon">NIAT</div>
-              <div className="text-xs font-extrabold tracking-tight text-niat-text">AI BOOTCAMP</div>
-            </div>
+        <div className="border-b border-niat-line px-5 pb-4 pt-5">
+          {/* The logo is a wide wordmark that already spells out NIAT, so it gets the full width to stay legible. */}
+          <img src={logo} alt="NIAT – NxtWave of Innovation in Advanced Technologies" className="block h-auto w-full max-w-52" />
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="text-sm font-bold text-niat-text">AI Bootcamp</span>
+            <span className="rounded-md bg-niat-pink px-2 py-0.5 text-xs font-semibold text-niat-maroon">Admin</span>
           </div>
 
           {event ? (
-            <div className="mt-3.5 rounded-xl border border-niat-line/80 bg-niat-warm-white p-2.5">
-              <div className="flex items-center justify-between gap-1">
-                <span className="truncate text-xs font-bold text-niat-text">{event.name}</span>
-                {event.status === 'active' && (
-                  <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-700">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                    LIVE
-                  </span>
-                )}
-              </div>
-              {event.locationName && <div className="mt-0.5 truncate text-[11px] font-semibold text-niat-maroon">📍 {event.locationName}</div>}
-              <div className="mt-1 flex items-center gap-2 text-[11px] text-niat-muted">
-                <span className={`rounded-full px-1.5 py-0.2 font-semibold capitalize ${statusBadge[event.status]}`}>
-                  {event.status}
+            <div className="mt-4 rounded-xl border border-niat-line/80 bg-niat-warm-white px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-semibold text-niat-text" title={event.name}>{event.name}</span>
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${statusBadge[event.status]}`}>
+                  {event.status === 'active' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" aria-hidden="true" />}
+                  {event.status === 'active' ? 'Live' : event.status === 'draft' ? 'Draft' : 'Completed'}
                 </span>
-                <span>{formatDate(event.date)}</span>
+              </div>
+              <div className="mt-1 truncate text-xs text-niat-muted">
+                {event.locationName && <>{event.locationName} · </>}{formatDate(event.date)}
               </div>
             </div>
           ) : loaded ? (
-            <div className="mt-2 text-xs text-niat-muted">No event selected</div>
+            <div className="mt-4 text-sm text-niat-muted">No event selected</div>
           ) : null}
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
           {sections.map((section) => (
             <div key={section.title}>
-              <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-niat-muted/70">
+              <div className="px-3 pb-1.5 text-xs font-semibold uppercase tracking-wider text-niat-muted/80">
                 {section.title}
               </div>
               <div className="space-y-0.5">
@@ -291,17 +284,17 @@ export default function AdminLayout() {
                     to={n.to}
                     end={n.end}
                     className={({ isActive }) =>
-                      `flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold transition-all ${
+                      `flex items-center gap-3 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                         isActive
-                          ? 'border border-niat-maroon/15 bg-niat-pink/70 text-niat-maroon shadow-2xs'
-                          : 'text-niat-muted hover:bg-niat-cream/40 hover:text-niat-text'
+                          ? 'border-niat-maroon/15 bg-niat-pink/70 font-semibold text-niat-maroon'
+                          : 'border-transparent text-niat-muted hover:bg-niat-cream/40 hover:text-niat-text'
                       }`
                     }
                   >
                     {n.icon}
                     <span className="flex-1">{n.label}</span>
                     {n.badge ? (
-                      <span className="rounded-full bg-niat-maroon px-1.5 py-0.5 text-[10px] font-black leading-none text-white" aria-label={`${n.badge} pending`}>
+                      <span className="rounded-full bg-niat-maroon px-1.5 py-0.5 text-xs font-bold leading-none text-white" aria-label={`${n.badge} pending`}>
                         {n.badge}
                       </span>
                     ) : null}
@@ -313,15 +306,15 @@ export default function AdminLayout() {
         </nav>
 
         <div className="border-t border-niat-line p-3 bg-white space-y-2">
-          <div className="flex items-center justify-between rounded-xl border border-niat-line/70 bg-niat-warm-white px-2.5 py-2 text-xs">
-            <div className="min-w-0 pr-2">
-              <div className="truncate text-[10px] font-bold uppercase tracking-wider text-niat-muted" title={roleLabel}>{roleLabel}</div>
-              <div className="truncate font-bold text-niat-text text-[11px]" title={user.email}>{user.name || user.email}</div>
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-niat-line/70 bg-niat-warm-white px-3 py-2">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-niat-text" title={user.email}>{user.name || user.email}</div>
+              <div className="truncate text-xs text-niat-muted" title={roleLabel}>{roleLabel}</div>
             </div>
             <button
               type="button"
               onClick={handleSignOut}
-              className="cursor-pointer rounded-lg border border-niat-line bg-white px-2 py-1 text-[10px] font-bold text-niat-muted transition-colors hover:border-niat-maroon/30 hover:bg-niat-pink hover:text-niat-maroon"
+              className="shrink-0 cursor-pointer rounded-lg border border-niat-line bg-white px-2.5 py-1 text-xs font-semibold text-niat-muted transition-colors hover:border-niat-maroon/30 hover:bg-niat-pink hover:text-niat-maroon"
               title="Sign out of admin session"
             >
               Sign Out
@@ -331,12 +324,12 @@ export default function AdminLayout() {
           {event?.publicPath && event.status !== 'completed' && (
             <div className="grid grid-cols-2 gap-1.5">
               <a href={event.publicPath} target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-center rounded-xl border border-niat-maroon/25 bg-white px-2 py-2 text-[11px] font-bold text-niat-maroon hover:bg-niat-pink">
-                ↗ Student Page
+                className="flex items-center justify-center gap-1 rounded-xl border border-niat-maroon/25 bg-white px-2 py-2 text-xs font-semibold text-niat-maroon hover:bg-niat-pink">
+                Student page <span aria-hidden="true">↗</span>
               </a>
               <a href={`/gate/${event.id}`} target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-center rounded-xl bg-niat-maroon px-2 py-2 text-[11px] font-bold text-white shadow-xs hover:bg-niat-maroon-dark">
-                ↗ Gate Kiosk
+                className="flex items-center justify-center gap-1 rounded-xl bg-niat-maroon px-2 py-2 text-xs font-semibold text-white shadow-xs hover:bg-niat-maroon-dark">
+                Gate kiosk <span aria-hidden="true">↗</span>
               </a>
             </div>
           )}
