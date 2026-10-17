@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getAdminToken } from '../../lib/api';
+import { downloadFile, getAdminToken } from '../../lib/api';
 import { NoEvent, PageHeader, useAdmin } from './AdminLayout';
 
 export default function Export() {
@@ -15,34 +15,7 @@ export default function Export() {
     setDownloading(format);
     setError(null);
     try {
-      const url = `/api/events/${event.id}/export?format=${format}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
-      const res = await fetch(url, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.message || `Download failed with status ${res.status}`);
-      }
-
-      const blob = await res.blob();
-      const disposition = res.headers.get('content-disposition');
-      let filename = `${event.name.replace(/[^\w-]+/g, '_')}-${event.date}.${format}`;
-      if (disposition) {
-        const match = disposition.match(/filename=["']?([^"';]+)["']?/i);
-        if (match?.[1]) filename = match[1];
-      }
-
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+      await downloadFile(`/events/${event.id}/export?format=${format}`, `${event.name.replace(/[^\w-]+/g, '_')}-${event.date}.${format}`);
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to download file. Please verify you are logged in.');
     } finally {
@@ -74,7 +47,7 @@ export default function Export() {
         </div>
 
         <p className="mt-4 text-sm leading-relaxed text-niat-muted">
-          Includes <strong>Name</strong>, <strong>Phone</strong>, <strong>Parent Phone</strong>, <strong>School/College</strong>, <strong>Class</strong>, <strong>Coming From</strong>, <strong>Registration Type</strong>, <strong>Status</strong>, <strong>Room</strong>, <strong>Team</strong>, <strong>Seat</strong>, and <strong>Check-in Time</strong>.
+          Includes <strong>Name</strong>, <strong>Phone</strong>, <strong>Parent Phone</strong>, <strong>School/College</strong>, <strong>Class</strong>, <strong>Coming From</strong>, <strong>Source</strong>, <strong>Registration Type</strong>, <strong>Status</strong>, <strong>Room</strong>, <strong>Team</strong>, <strong>Seat</strong>, and <strong>Check-in Time</strong>.
           Participants who have not yet checked in are included with their pre-assigned room or pending status.
         </p>
 

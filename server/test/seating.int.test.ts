@@ -286,6 +286,42 @@ describe.skipIf(!url)('rooms, teams and seat allocation (database)', () => {
     expect(pOverview.events.find((e: any) => e.id === first.id)).toMatchObject({ seated: 2, walkIns: 1, registered: 1 });
     expect((await request('GET', '/platform/overview')).body.pendingAdmins).toBe(0);
 
+    // Marketing source comes from the import (a re-import fills it in), is never shown to students,
+    // and feeds the dashboard's source and area funnels. Sources group case-insensitively.
+    const withSource = await asPriya('POST', `/events/${first.id}/import`, { rows: [
+      { rowNumber: 2, name: 'Kavya Rao', phone: '9822222222', schoolCollege: 'RV College', source: 'CBA' },
+      { rowNumber: 3, name: 'Sneha M', phone: '9855555555', schoolCollege: 'BMS', source: ' cba ', location: 'Jayanagar' },
+    ] });
+    expect(withSource.body).toMatchObject({ imported: 1, alreadyRegistered: 1 });
+    const sneha = await pub('/lookup', 'POST', { phone: '9855555555' });
+    expect(sneha.body).toMatchObject({ state: 'registered', participant: { name: 'Sneha M', location: 'Jayanagar' } });
+    expect(JSON.stringify(sneha.body)).not.toMatch(/cba|source/i);
+    const dash = (await asPriya('GET', `/events/${first.id}/dashboard`)).body;
+    expect(dash.sources).toEqual([
+      { key: 'CBA', source: 'CBA', kind: 'source', registered: 2, arrived: 1 },
+      { key: '__walk_in', source: 'Walk-in', kind: 'walk_in', registered: 1, arrived: 1 },
+    ]);
+    expect(dash.areas).toEqual({
+      rows: [{ label: 'Jayanagar', registered: 2, arrived: 1 }, { label: 'Malleshwaram', registered: 1, arrived: 1 }],
+      others: { count: 0, registered: 0, arrived: 0 },
+      missing: { registered: 0, arrived: 0 },
+    });
+    expect(dash.schools.rows.map((r: any) => r.label)).toEqual(['PES', 'RV College', 'BMS']);
+    expect(dash.stats).toMatchObject({ registered: 2, walkIns: 1, total: 3, arrived: 2, seated: 2, waiting: 0, notArrived: 1, withoutSource: 0 });
+    expect(dash.arrivals.buckets.reduce((n: number, b: any) => n + b.count, 0)).toBe(2);
+    const bySource = await asPriya('GET', `/events/${first.id}/participants?q=cba`);
+    expect(bySource.body.rows.map((r: any) => r.source).sort()).toEqual(['CBA', 'cba']);
+    // The call list: registered people from one source who haven't arrived yet.
+    const callList = await asPriya('GET', `/events/${first.id}/participants?filter=pending&source=CBA`);
+    expect(callList.body.rows.map((r: any) => r.name)).toEqual(['Sneha M']);
+    expect((await asPriya('GET', `/events/${first.id}/participants?source=__walk_in`)).body.rows.map((r: any) => r.name)).toEqual(['Rahul S']);
+    // Copying the list to another event keeps each person's source.
+    expect((await asPriya('POST', `/events/${second.id}/copy-from/${first.id}`)).body.imported).toBe(3);
+    expect((await asPriya('GET', `/events/${second.id}/dashboard`)).body.sources).toEqual([
+      { key: 'CBA', source: 'CBA', kind: 'source', registered: 2, arrived: 0 },
+      { key: '__none', source: 'Not specified', kind: 'none', registered: 1, arrived: 0 },
+    ]);
+
     // Disabling an account signs it out immediately.
     await request('PATCH', `/platform/admins/${priya.id}`, { status: 'disabled' });
     expect((await asPriya('GET', '/events')).body.code).toBe('ACCOUNT_DISABLED');

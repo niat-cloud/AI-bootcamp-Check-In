@@ -27,7 +27,9 @@ npm run dev                 # API on :4000, web app on http://localhost:5173
 
 1. **Super admin → Locations:** add each city or campus. Its link name starts every event URL there.
 2. **Admin → Event Setup:** create the event (location, date, expected students, team size, seat labels), then add rooms with capacity and priority. The public link and QR code appear right away.
-3. **Admin → Import Participants:** upload `.xlsx` / `.csv` (Name, Phone, School/College; Class and Parent Phone are optional, in any column order), or copy the list from a previous event of the same location.
+3. **Admin → Import Participants:** upload `.xlsx` / `.csv` (Name, Phone, School/College and Source; Class, Parent Phone and Area are optional, in any column order), or copy the list from a previous event of the same location.
+   - **Source** is the marketing channel the person came through (CBA, Pass, DM, Outbound …). Only admins see it: it is on the dashboard, the participants list and the export, and never on the student check-in pages. Re-importing a file fills in or corrects the source of people already on the list.
+   - The dashboard's **Marketing** tab ranks sources by show-up rate (registered → arrived), lists the top areas and schools, and has a **call list** of registered people who haven't arrived yet (filter by source, export as CSV). Areas come from the Area column, and students give theirs when they check in.
 4. **Activate** the event. This opens the event page and the gate kiosk. Team size, seat labels, the location and the link are fixed after this. Rooms and their capacity can still change.
 5. **Check-in:** students enter their phone number on the event page.
    - **Registered:** they check their details and confirm.
@@ -35,7 +37,8 @@ npm run dev                 # API on :4000, web app on http://localhost:5173
    - **New:** they fill in a short form.
 
    They then get a seat. Reopening the link on the same phone shows the seat again. When every seat is taken they go on the waiting list until capacity is added (Rooms & Teams → Auto-Allocate).
-6. **Complete** the event when it's over. Data stays available for export.
+6. **Dashboard → Live operations** during the event: what needs attention now (waiting list, last seats, quiet periods), arrivals per time slot with a forecast of when seats run out, the live check-in feed, room and table occupancy. It refreshes every 5 seconds.
+7. **Complete** the event when it's over. Data stays available for export.
 
 Several events (in different locations, or the same one) can be live at the same time. Each event has its own lock, so they never slow each other down.
 

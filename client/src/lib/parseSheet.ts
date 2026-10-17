@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 
-export type FieldKey = 'name' | 'phone' | 'schoolCollege' | 'className' | 'parentPhone';
+export type FieldKey = 'name' | 'phone' | 'schoolCollege' | 'className' | 'parentPhone' | 'location' | 'source';
 
 export const FIELDS: { key: FieldKey; label: string; required: boolean; patterns: RegExp[] }[] = [
   { key: 'name', label: 'Name', required: true, patterns: [/^(student\s*)?(full\s*)?name$/i, /name/i] },
@@ -8,6 +8,9 @@ export const FIELDS: { key: FieldKey; label: string; required: boolean; patterns
   { key: 'schoolCollege', label: 'School/College', required: true, patterns: [/school|college|institut|organi[sz]ation/i] },
   { key: 'className', label: 'Class', required: false, patterns: [/^(class|grade|standard|std|year)\.?$/i, /class|grade/i] },
   { key: 'parentPhone', label: 'Parent Phone', required: false, patterns: [/(parent|father|mother|guardian).*(phone|mobile|contact|no)/i] },
+  { key: 'location', label: 'Area', required: false, patterns: [/^(area|locality|city|town|location|place|coming\s*from)$/i, /area|locality|city|town|location|coming\s*from/i] },
+  // Marketing channel (CBA, Pass, DM, Outbound …). Admin-only: students never see it.
+  { key: 'source', label: 'Source', required: true, patterns: [/^(lead\s*)?source$/i, /source|channel|referr/i] },
 ];
 
 export interface ParsedSheet {
@@ -40,7 +43,7 @@ export function guessMapping(headers: string[]): Record<FieldKey, number> {
   const mapping = {} as Record<FieldKey, number>;
   const used = new Set<number>();
   // Most specific fields first so "Parent Phone" isn't taken as the student's phone.
-  for (const key of ['parentPhone', 'className', 'schoolCollege', 'phone', 'name'] as FieldKey[]) {
+  for (const key of ['parentPhone', 'className', 'schoolCollege', 'source', 'location', 'phone', 'name'] as FieldKey[]) {
     const field = FIELDS.find((f) => f.key === key)!;
     mapping[key] = -1;
     for (const pattern of field.patterns) {
