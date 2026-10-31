@@ -7,7 +7,7 @@
   "regions": ["icn1"],
   "functions": {
     "api/index.js": {
-      "maxDuration": 30,
+      "maxDuration": 60,
       "includeFiles": "server/dist/**"
     }
   },

@@ -11,6 +11,7 @@ import { eventsRouter } from './routes/events.js';
 import { gateRouter } from './routes/gate.js';
 import { importRouter } from './routes/import.js';
 import { platformRouter } from './routes/platform.js';
+import { projectsRouter } from './routes/projects.js';
 import { publicRouter } from './routes/public.js';
 
 export function createApp() {
@@ -31,6 +32,7 @@ export function createApp() {
   app.use('/api/events/:id', requireAdminAuth, requireEventAccess);
   app.use('/api/events/:id/gate', gateRouter);
   app.use('/api/events/:id', importRouter);
+  app.use('/api/events/:id', projectsRouter);
   app.use('/api/events/:id', adminRouter);
   app.use('/api/events', requireAdminAuth, eventsRouter);
 

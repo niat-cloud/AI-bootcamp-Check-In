@@ -19,6 +19,8 @@ const Import = lazy(() => import('./pages/admin/Import'));
 const Participants = lazy(() => import('./pages/admin/Participants'));
 const Teams = lazy(() => import('./pages/admin/Teams'));
 const Export = lazy(() => import('./pages/admin/Export'));
+const Projects = lazy(() => import('./pages/admin/Projects'));
+const ProjectSubmit = lazy(() => import('./pages/checkin/ProjectSubmit'));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -37,11 +39,13 @@ createRoot(document.getElementById('root')!).render(
             <Route path="participants" element={<Participants />} />
             <Route path="teams" element={<Teams />} />
             <Route path="export" element={<Export />} />
+            <Route path="projects" element={<Projects />} />
             <Route path="events" element={<Events />} />
           </Route>
           <Route path="/gate/:eventId" element={<CheckIn />} />
           {/* Public event page from the QR code, e.g. /hyderabad/18-oct-2026 */}
           <Route path="/:location/:slug" element={<EventCheckIn />} />
+          <Route path="/:location/:slug/project" element={<ProjectSubmit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

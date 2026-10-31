@@ -95,6 +95,15 @@ const navSections: NavSection[] = [
         ),
       },
       {
+        to: '/admin/projects',
+        label: 'Projects',
+        icon: (
+          <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 21h8m-4-4v4m-5-17h10v5a5 5 0 01-10 0V4zM7 6H4v1a3 3 0 003 3m10-4h3v1a3 3 0 01-3 3" />
+          </svg>
+        ),
+      },
+      {
         to: '/admin/export',
         label: 'Export',
         icon: (

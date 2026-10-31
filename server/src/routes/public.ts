@@ -5,6 +5,7 @@ import { AppError } from '../lib/errors.js';
 import { maskPhone } from '../lib/phone.js';
 import { clientIp, rateLimiter } from '../lib/rateLimit.js';
 import { detailsInput, eventNotActiveError, registerAndSeat, requirePhone } from '../services/checkin.js';
+import { publicRooms, publicTeam, submissionInput, submitProject } from '../services/projects.js';
 import { getAssignment } from '../services/seating.js';
 
 /**
@@ -17,6 +18,7 @@ export const publicRouter = Router();
 // because a whole venue on one Wi-Fi (or one mobile carrier's NAT) can share an address during the rush.
 const lookupLimit = rateLimiter('lookups', 120, 60 * 1000);
 const checkinLimit = rateLimiter('check-ins', 90, 60 * 1000);
+const submitLimit = rateLimiter('project submissions', 60, 60 * 1000);
 
 /** Active events, for the home page. */
 publicRouter.get('/live', async (_req, res) => {
@@ -42,7 +44,7 @@ async function findEvent(req: Request) {
   const { location, slug } = req.params as Record<string, string>;
   const { rows: [event] } = await pool.query(
     `SELECT e.id, e.name, e.event_date AS "date", e.event_time AS "time", e.status,
-       l.name AS "locationName", l.city, l.state
+       e.team_name_prefix AS "teamNamePrefix", l.name AS "locationName", l.city, l.state
      FROM events e JOIN locations l ON l.id = e.location_id
      WHERE l.slug = $1 AND e.slug = $2`,
     [String(location).toLowerCase(), String(slug).toLowerCase()],
@@ -58,7 +60,7 @@ async function findActiveEvent(req: Request) {
 }
 
 publicRouter.get('/events/:location/:slug', async (req, res) => {
-  const { id: _id, ...event } = await findEvent(req);
+  const { id: _id, teamNamePrefix: _prefix, ...event } = await findEvent(req);
   res.json(event);
 });
 
@@ -101,4 +103,28 @@ publicRouter.post('/events/:location/:slug/checkin', async (req, res) => {
   checkinLimit(clientIp(req));
   const event = await findActiveEvent(req);
   res.json(await registerAndSeat(event.id, v));
+});
+
+// ---- Project submission: the page instructors show on the classroom screen at build time ----
+
+/** Rooms and their teams, with which teams have already submitted. */
+publicRouter.get('/events/:location/:slug/projects', async (req, res) => {
+  const event = await findActiveEvent(req);
+  res.json({ rooms: await publicRooms(event.id, event.teamNamePrefix) });
+});
+
+/** One team: its members (so students can check it's theirs) and its submission so far. */
+publicRouter.get('/events/:location/:slug/projects/teams/:teamId', async (req, res) => {
+  const event = await findActiveEvent(req);
+  res.json(await publicTeam(event.id, Number(req.params.teamId)));
+});
+
+/** Submit or update the team's project. The link is checked before it is saved. */
+publicRouter.post('/events/:location/:slug/projects/teams/:teamId', async (req, res) => {
+  const v = submissionInput.parse(req.body);
+  submitLimit(clientIp(req));
+  const event = await findActiveEvent(req);
+  const teamId = Number(req.params.teamId);
+  const result = await submitProject(event.id, teamId, v);
+  res.json({ ...result, ...(await publicTeam(event.id, teamId)) });
 });
