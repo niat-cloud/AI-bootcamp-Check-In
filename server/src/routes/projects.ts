@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { adminOf } from '../lib/auth.js';
 import { notFound } from '../lib/errors.js';
 import {
-  awardsInput, evaluateNext, projectsOverview, requeueSubmission, reviewInput, reviewSubmission, screenshotOf,
+  awardsInput, deleteSubmission, evaluateNext, projectsOverview, requeueSubmission, reviewInput, reviewSubmission, screenshotOf,
   setAwards, setResultsLock, setRoomsStatus,
 } from '../services/projects.js';
 import { loadEvent } from './events.js';
@@ -38,6 +38,11 @@ projectsRouter.post('/projects/evaluate-next', async (req, res) => {
 
 projectsRouter.post('/projects/:submissionId/re-evaluate', async (req, res) => {
   res.json(await requeueSubmission(eventIdOf(req), Number(req.params.submissionId)));
+});
+
+/** Lets the team submit again (their submission and its scores are removed). */
+projectsRouter.delete('/projects/:submissionId', async (req, res) => {
+  res.json(await deleteSubmission(eventIdOf(req), Number(req.params.submissionId), actorOf(req)));
 });
 
 projectsRouter.patch('/projects/:submissionId', async (req, res) => {

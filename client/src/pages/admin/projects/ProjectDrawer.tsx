@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ConfirmButton from '../../../components/ConfirmButton';
 import { api, getAdminToken, type ApiError } from '../../../lib/api';
 import { AWARDS, clock, flagsOf, type Project } from './types';
 
@@ -182,6 +183,24 @@ export function ProjectDrawer({ eventId, project, teamName, maxTotal, locked, on
               </div>
             )}
           </section>
+
+          {!locked && (
+            <section className="rounded-2xl border border-niat-line p-4">
+              <h3 className="font-bold">Let this team submit again</h3>
+              <p className="mt-1 text-xs text-niat-muted">
+                Teams get one submission. For a genuine mistake (wrong link, wrong team), remove this submission and its scores;
+                the team can then submit again from the same QR code.
+              </p>
+              <div className="mt-3">
+                <ConfirmButton className="btn-danger py-2 text-sm" disabled={busy}
+                  confirmText="Remove this submission and its scores?"
+                  onConfirm={() => act(() => api(`/events/${eventId}/projects/${project.id}`, { method: 'DELETE' }),
+                    `${teamName} can submit again`)}>
+                  Remove submission
+                </ConfirmButton>
+              </div>
+            </section>
+          )}
         </div>
       </aside>
     </div>

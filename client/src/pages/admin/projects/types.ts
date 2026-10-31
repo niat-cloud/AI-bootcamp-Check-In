@@ -23,6 +23,8 @@ export interface Project {
   editCount: number;
   isLate: boolean;
   evalStatus: 'pending' | 'evaluating' | 'evaluated' | 'failed';
+  /** While the AI usage limit resets: when this project will be tried again. */
+  retryAt: string | null;
   disqualified: boolean;
   adminScore: number | null;
   adminNote: string | null;
