@@ -38,7 +38,13 @@ npm run dev                 # API on :4000, web app on http://localhost:5173
 
    They then get a seat. Reopening the link on the same phone shows the seat again. When every seat is taken they go on the waiting list until capacity is added (Rooms & Teams → Auto-Allocate).
 6. **Dashboard → Live operations** during the event: what needs attention now (waiting list, last seats, quiet periods), arrivals per time slot with a forecast of when seats run out, the live check-in feed, room and table occupancy. It refreshes every 5 seconds.
-7. **Complete** the event when it's over. Data stays available for export.
+7. **Projects & AI Judging:**
+   - **Student page:** `/<location>/<event>/project` (or click "Show QR on screen" in Admin → Projects to project the room QR with live progress bar and countdown).
+   - **Submission flow:** teams select their room (auto-selected when scanning a room QR), pick their team number, select their name from team members, choose a theme, describe the problem statement, and paste their published Lovable link. Editor links (`lovable.dev/projects/...`) and unrendered preview links are rejected with instructions to click Publish.
+   - **Admin controls:** per-room submission window controls (Open with 15–90 min deadline, +10 min, Close, Open all rooms). Submissions after deadline are accepted and flagged as late; Close is the hard stop.
+   - **AI scoring:** automatically evaluates submissions in the background (OpenAI first, then Gemini, then Claude, using whichever keys are set) against 5 rubric criteria (Problem Clarity, Solution Fit, Working App & Experience, Creativity & Wow Factor, Impact & Usefulness, /50 total). Rendered screenshots and page text are captured via Browserless.
+   - **Judges review & ranking:** ranked shortlist table per room with flags (duplicate links, late, un-evaluable, failed). Judges can override scores with notes, disqualify, re-queue, select Winner / Runner-up / 2nd Runner-up ("Fill from top 3"), lock room results, and export all results to CSV.
+8. **Complete** the event when it's over. Data stays available for export.
 
 Several events (in different locations, or the same one) can be live at the same time. Each event has its own lock, so they never slow each other down.
 
@@ -69,6 +75,8 @@ npm test     # unit tests; with DATABASE_URL set, also the full DB scenarios (in
    - `AUTH_SECRET`: a long random string that signs admin sessions. If it isn't set, a key derived from `DATABASE_URL` is used.
    - `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` (optional): the first super admin.
    - `EVENT_TIMEZONE` = `Asia/Kolkata` (optional)
+   - `OPENAI_API_KEY` (main), `GEMINI_API_KEY` and/or `ANTHROPIC_API_KEY`: API keys for AI project scoring. Every provider with a key is used in that order: if one fails for a project, the next one scores it. `OPENAI_MODEL`, `GEMINI_MODEL` and `PROJECT_EVAL_MODEL` (Claude) pick the models.
+   - `BROWSERLESS_TOKEN` (optional): Browserless headless browser token to render client-side Lovable apps and capture screenshots for the AI evaluator.
 3. Deploy. The serverless function does not create database tables. Create them by running `npm run migrate` locally against the same database.
 
 Note: Vercel limits request bodies to 4.5 MB, which is plenty for participant imports of a few thousand rows.
