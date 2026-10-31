@@ -2,8 +2,10 @@ import { z } from 'zod';
 import { pool, withTransaction } from '../db/pool.js';
 import { AppError, badRequest, notFound } from '../lib/errors.js';
 import { AiRateLimitError, aiConfigured, evaluateProject } from '../lib/evaluator.js';
+import { normalizePhone } from '../lib/phone.js';
 import { assertReachable, capturePage, normalizeProjectUrl } from '../lib/projectPage.js';
 import { CRITERIA, MAX_TOTAL, PROJECT_THEMES, RUBRIC_VERSION } from '../lib/rubric.js';
+import { logAllocation } from './rooms.js';
 
 /**
  * Project submissions: one per team, per event. Students submit from the event's project page,
@@ -18,8 +20,13 @@ export const shortName = (name: string) => {
   return parts.length > 1 ? `${parts.slice(0, -1).join(' ')} ${parts.at(-1)![0]!.toUpperCase()}.` : parts[0] ?? '';
 };
 
-export const submissionInput = z.object({
+/** Who is submitting: a member of the team, proven by the phone number they checked in with. */
+export const memberInput = z.object({
   memberId: z.coerce.number().int().positive('Choose your name from the team list'),
+  phone: z.string().trim().min(1, 'Enter your mobile number').max(20),
+});
+
+export const submissionInput = memberInput.extend({
   projectName: z.string().trim().min(2, 'Enter your project’s name').max(80),
   theme: z.enum(PROJECT_THEMES, { errorMap: () => ({ message: 'Choose your project’s theme' }) }),
   problemStatement: z.string().trim().min(15, 'Describe the problem in a sentence or two').max(600),
@@ -70,7 +77,7 @@ async function loadTeam(eventId: number, teamId: number) {
   );
   if (!team) throw notFound('Team');
   const { rows: members } = await pool.query(
-    `SELECT ep.id, p.name, s.label FROM seats s
+    `SELECT ep.id, p.name, p.phone, s.label FROM seats s
      JOIN event_participants ep ON ep.id = s.event_participant_id
      JOIN participants p ON p.id = ep.participant_id
      WHERE s.team_id = $1 ORDER BY s.position`,
@@ -114,11 +121,36 @@ const closedError = (status: ProjectsStatus) => new AppError(409, 'SUBMISSIONS_C
     ? 'Project submissions haven’t opened for your room yet. Your instructor will tell you when to submit.'
     : 'Project submissions for your room are closed. Talk to your instructor.');
 
-/** Create or update the team's submission. Any change sends it back to the AI for a fresh score. */
+/**
+ * The student who tapped a name must be that person: their number has to match the one they checked in
+ * with. This stops someone from another team (or a teammate's friend) submitting a project for a team.
+ */
+export async function verifyMember(eventId: number, teamId: number, v: z.infer<typeof memberInput>) {
+  const { members } = await loadTeam(eventId, teamId);
+  const member = members.find((m) => m.id === v.memberId);
+  if (!member) throw badRequest('Choose your name from your team’s list.');
+  const phone = normalizePhone(v.phone);
+  if (!phone) throw new AppError(400, 'INVALID_PHONE', 'Enter a valid 10-digit mobile number.');
+  if (phone !== member.phone) {
+    throw new AppError(403, 'PHONE_MISMATCH',
+      `This isn’t the number ${shortName(member.name)} checked in with. Use your own name and the mobile number you gave at check-in.`);
+  }
+  return { ok: true, name: shortName(member.name) };
+}
+
+const alreadySubmittedError = () => new AppError(409, 'ALREADY_SUBMITTED',
+  'Your team has already submitted its project. Each team gets one submission. If something is wrong, talk to your instructor.');
+
+/**
+ * Save the team's one and only submission. A team can't change it afterwards; if it was a genuine mistake,
+ * an admin removes the submission (deleteSubmission) and the team submits again.
+ */
 export async function submitProject(eventId: number, teamId: number, v: SubmissionInput) {
   const { team, members } = await loadTeam(eventId, teamId);
   if (team.projects_status !== 'open') throw closedError(team.projects_status);
-  if (!members.some((m) => m.id === v.memberId)) throw badRequest('Choose your name from your team’s list.');
+  const { rowCount: exists } = await pool.query('SELECT 1 FROM project_submissions WHERE team_id = $1', [teamId]);
+  if (exists) throw alreadySubmittedError();
+  await verifyMember(eventId, teamId, v);
 
   const url = normalizeProjectUrl(v.projectUrl);
   await assertReachable(url);
@@ -129,19 +161,16 @@ export async function submitProject(eventId: number, teamId: number, v: Submissi
       'SELECT projects_status, projects_deadline FROM rooms WHERE id = $1 FOR UPDATE', [team.room_id]);
     if (room.projects_status !== 'open') throw closedError(room.projects_status);
     const late = room.projects_deadline !== null && new Date(room.projects_deadline).getTime() < Date.now();
+    // Two teammates pressing submit at the same moment: the first one wins, the second gets "already submitted".
     const { rows: [saved] } = await client.query(
       `INSERT INTO project_submissions (event_id, room_id, team_id, project_name, theme, problem_statement, project_url, submitted_by, is_late)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (team_id) DO UPDATE SET
-         project_name = EXCLUDED.project_name, theme = EXCLUDED.theme, problem_statement = EXCLUDED.problem_statement,
-         project_url = EXCLUDED.project_url, submitted_by = EXCLUDED.submitted_by,
-         is_late = project_submissions.is_late OR EXCLUDED.is_late,
-         updated_at = now(), edit_count = project_submissions.edit_count + 1,
-         eval_status = 'pending', eval_started_at = NULL, eval_attempts = 0
-       RETURNING (xmax <> 0) AS updated, is_late`,
+       ON CONFLICT (team_id) DO NOTHING
+       RETURNING is_late`,
       [eventId, team.room_id, teamId, v.projectName, v.theme, v.problemStatement, url, v.memberId, late],
     );
-    return { updated: saved.updated as boolean, late: saved.is_late as boolean };
+    if (!saved) throw alreadySubmittedError();
+    return { late: saved.is_late as boolean };
   });
 }
 
@@ -229,6 +258,8 @@ interface ProjectRow {
   editCount: number;
   isLate: boolean;
   evalStatus: string;
+  /** Set while the project waits for the AI usage limit to reset: when it will be tried again. */
+  retryAt: string | null;
   disqualified: boolean;
   adminScore: number | null;
   adminNote: string | null;
@@ -348,6 +379,8 @@ export async function projectsOverview(eventId: number, prefix: string) {
       editCount: s.edit_count,
       isLate: s.is_late,
       evalStatus: s.eval_status,
+      retryAt: s.eval_status === 'pending' && s.eval_started_at && new Date(s.eval_started_at).getTime() > Date.now()
+        ? s.eval_started_at : null,
       disqualified: s.disqualified,
       adminScore: s.admin_score,
       adminNote: s.admin_note,
@@ -455,6 +488,16 @@ export async function reviewSubmission(eventId: number, id: number, v: z.infer<t
   add('reviewed_by', actor);
   sets.push('reviewed_at = now()');
   await pool.query(`UPDATE project_submissions SET ${sets.join(', ')} WHERE id = $1`, params);
+  return { ok: true };
+}
+
+/** Removes a team's submission (and its scores) so the team can submit again, e.g. after a wrong link. */
+export async function deleteSubmission(eventId: number, id: number, actor: string) {
+  const s = await loadSubmission(eventId, id);
+  if (s.results_locked_at) throw lockedError();
+  const { rows: [gone] } = await pool.query(
+    'DELETE FROM project_submissions WHERE id = $1 RETURNING event_id, room_id, team_id, project_name, project_url', [id]);
+  await logAllocation(pool, eventId, 'project_submission_removed', gone ?? { id }, actor);
   return { ok: true };
 }
 

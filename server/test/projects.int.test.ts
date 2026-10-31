@@ -131,6 +131,7 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
     // 3. Attempt submission while room is not_open -> rejected with 409
     const earlySubmit = await call(null, 'POST', `/public/events/hyderabad/31-oct-2026/projects/teams/${teamId}`, {
       memberId: aliceEpId,
+      phone: '9111111111',
       projectName: 'CampusHelper',
       theme: 'Student Life Problem Solver',
       problemStatement: 'Students cannot find study rooms easily on campus.',
@@ -154,29 +155,42 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
     expect(teamView.body.members.some((m: any) => m.name === 'Alice W.')).toBe(true);
 
     // 5. Submit project
+    // Someone using a different number can't submit as Alice
+    const wrongPhone = await call(null, 'POST', `/public/events/hyderabad/31-oct-2026/projects/teams/${teamId}/verify`, {
+      memberId: aliceEpId,
+      phone: '9222222222',
+    });
+    expect(wrongPhone.status).toBe(403);
+    expect(wrongPhone.body.code).toBe('PHONE_MISMATCH');
+    const rightPhone = await call(null, 'POST', `/public/events/hyderabad/31-oct-2026/projects/teams/${teamId}/verify`, {
+      memberId: aliceEpId,
+      phone: '+91 91111 11111',
+    });
+    expect(rightPhone.status).toBe(200);
+
     const submitRes = await call(null, 'POST', `/public/events/hyderabad/31-oct-2026/projects/teams/${teamId}`, {
       memberId: aliceEpId,
+      phone: '9111111111',
       projectName: 'CampusHelper',
       theme: 'Student Life Problem Solver',
       problemStatement: 'Students cannot find study rooms easily on campus.',
       projectUrl: 'https://example.com',
     });
     expect(submitRes.status).toBe(200);
-    expect(submitRes.body.updated).toBe(false);
     expect(submitRes.body.late).toBe(false);
     expect(submitRes.body.submission.projectName).toBe('CampusHelper');
 
-    // 6. Update project (edit)
+    // 6. A second submission from the same team is refused: one chance per team
     const updateRes = await call(null, 'POST', `/public/events/hyderabad/31-oct-2026/projects/teams/${teamId}`, {
       memberId: aliceEpId,
+      phone: '9111111111',
       projectName: 'CampusHelper v2',
       theme: 'Student Life Problem Solver',
       problemStatement: 'Students cannot find study rooms and campus facilities easily.',
       projectUrl: 'https://iana.org',
     });
-    expect(updateRes.status).toBe(200);
-    expect(updateRes.body.updated).toBe(true);
-    expect(updateRes.body.submission.projectName).toBe('CampusHelper v2');
+    expect(updateRes.status).toBe(409);
+    expect(updateRes.body.code).toBe('ALREADY_SUBMITTED');
 
     // 7. Admin overview
     const overviewRes = await request('GET', `/events/${event.id}/projects`);
@@ -185,8 +199,8 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
     expect(overview.rooms[0].submittedCount).toBe(1);
     expect(overview.rooms[0].projects).toHaveLength(1);
     const proj = overview.rooms[0].projects[0];
-    expect(proj.projectName).toBe('CampusHelper v2');
-    expect(proj.editCount).toBe(1);
+    expect(proj.projectName).toBe('CampusHelper');
+    expect(proj.editCount).toBe(0);
     expect(proj.evalStatus).toBe('pending');
     expect(overview.queue.pending).toBe(1);
 
@@ -245,7 +259,7 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
     const exportRes = await request('GET', `/events/${event.id}/projects/export`);
     expect(exportRes.status).toBe(200);
     expect(exportRes.headers.get('content-type')).toContain('text/csv');
-    expect(exportRes.body).toContain('CampusHelper v2');
+    expect(exportRes.body).toContain('CampusHelper');
     expect(exportRes.body).toContain('Winner');
     expect(exportRes.body).toContain('44.5');
   }, 120_000);

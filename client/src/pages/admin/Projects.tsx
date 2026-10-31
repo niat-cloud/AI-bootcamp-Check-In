@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, downloadFile, publicUrl, type ApiError } from '../../lib/api';
 import { NoEvent, PageHeader, useAdmin } from './AdminLayout';
+import { Announce } from './projects/Announce';
+import { Leaderboard } from './projects/Leaderboard';
 import { Present } from './projects/Present';
 import { ProjectDrawer } from './projects/ProjectDrawer';
-import { AWARDS, clock, flagsOf, SHORTLIST_SIZE, STATUS_LABEL, type Award, type ProjectRoom, type ProjectsOverview } from './projects/types';
+import { RoomBoard } from './projects/RoomBoard';
+import { AWARDS, clock, SHORTLIST_SIZE, STATUS_LABEL, type Award, type ProjectRoom, type ProjectsOverview } from './projects/types';
 
 /**
  * Projects scored at the same time by this page. The server hands each request a different project.
@@ -18,6 +21,7 @@ export default function Projects() {
   const [roomId, setRoomId] = useState<number | null>(null);
   const [openId, setOpenId] = useState<number | null>(null);
   const [presenting, setPresenting] = useState(false);
+  const [announcing, setAnnouncing] = useState(false);
   const [toast, setToast] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [autoScore, setAutoScore] = useState(true);
   const scoring = useRef(0);
@@ -87,23 +91,14 @@ export default function Projects() {
           <div key={label} className="card py-3"><div className="text-xs font-semibold text-niat-muted">{label}</div><div className="text-2xl font-extrabold tabular-nums">{value}</div></div>
         ))}
       </div>
-      {data.aiConfigured && (
-        <label className="mb-4 flex items-center gap-2 text-sm text-niat-muted">
-          <input type="checkbox" checked={autoScore} onChange={(e) => setAutoScore(e.target.checked)} /> Score new submissions automatically while this page is open
-        </label>
-      )}
+      {data.aiConfigured && <ScoringProgress scored={totals.scored} submitted={totals.submitted} data={data} autoScore={autoScore} setAutoScore={setAutoScore} />}
 
-      <nav className="mb-4 flex gap-2 overflow-x-auto pb-1">
-        {data.rooms.map((r) => (
-          <button key={r.id} onClick={() => setRoomId(r.id)} aria-pressed={r.id === room?.id}
-            className={`shrink-0 rounded-xl border px-3.5 py-2 text-left text-sm ${r.id === room?.id ? 'border-niat-maroon bg-niat-maroon text-white' : 'border-niat-line bg-white'}`}>
-            <b>{r.name}</b><span className="block text-xs opacity-80">{r.submittedCount}/{r.teamCount} · {STATUS_LABEL[r.status]}</span>
-          </button>
-        ))}
-      </nav>
+      <RoomBoard rooms={data.rooms} selectedId={room?.id} onSelect={setRoomId}
+        onStatus={(id, status, deadlineMinutes) => setStatus(id, status, deadlineMinutes)} />
 
       {room && <RoomPanel key={room.id} room={room} data={data} eventId={event.id} prefix={data.teamNamePrefix}
-        canPresent={Boolean(submitPath)} onPresent={() => setPresenting(true)} onOpen={setOpenId} setStatus={setStatus} run={run} />}
+        canPresent={Boolean(submitPath)} onPresent={() => setPresenting(true)} onAnnounce={() => setAnnouncing(true)}
+        onOpen={setOpenId} setStatus={setStatus} run={run} />}
 
       {open && room && (
         <ProjectDrawer eventId={event.id} project={open} teamName={`${room.name} · ${data.teamNamePrefix} ${open.teamNumber}`}
@@ -113,13 +108,46 @@ export default function Projects() {
       {presenting && room && submitPath && (
         <Present room={room} url={publicUrl(`${submitPath}?room=${room.id}`)} onClose={() => setPresenting(false)} />
       )}
+      {announcing && room && <Announce room={room} prefix={data.teamNamePrefix} onClose={() => setAnnouncing(false)} />}
     </div>
   );
 }
 
-function RoomPanel({ room, data, eventId, prefix, canPresent, onPresent, onOpen, setStatus, run }: {
+/** How far the AI has got, and a reminder that scoring only runs while an admin keeps this page open. */
+function ScoringProgress({ scored, submitted, data, autoScore, setAutoScore }: {
+  scored: number; submitted: number; data: ProjectsOverview; autoScore: boolean; setAutoScore: (on: boolean) => void;
+}) {
+  const waiting = data.queue.pending + data.queue.evaluating;
+  const limited = data.rooms.some((r) => r.projects.some((p) => p.retryAt));
+  return (
+    <div className="card mb-6 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="font-bold">
+          {submitted ? `${scored} of ${submitted} projects scored` : 'No projects submitted yet'}
+          {waiting > 0 && <span className="font-semibold text-niat-muted"> · {waiting} waiting</span>}
+          {data.queue.failed > 0 && <span className="font-semibold text-niat-maroon"> · {data.queue.failed} failed</span>}
+        </span>
+        <label className="flex items-center gap-2 text-niat-muted">
+          <input type="checkbox" checked={autoScore} onChange={(e) => setAutoScore(e.target.checked)} /> Score automatically
+        </label>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
+        <div className="h-full rounded-full bg-niat-maroon transition-[width] duration-700" style={{ width: `${submitted ? (scored / submitted) * 100 : 0}%` }} />
+      </div>
+      <p className={`mt-2 text-xs ${limited ? 'font-semibold text-amber-800' : 'text-niat-muted'}`}>
+        {limited
+          ? 'The AI usage limit was reached. Waiting projects are retried automatically in about a minute.'
+          : waiting > 0 && autoScore
+            ? 'Scoring runs while this page is open. Keep this tab open until every project is scored.'
+            : !autoScore ? 'Automatic scoring is paused on this page.' : 'Every submitted project is scored.'}
+      </p>
+    </div>
+  );
+}
+
+function RoomPanel({ room, data, eventId, prefix, canPresent, onPresent, onAnnounce, onOpen, setStatus, run }: {
   room: ProjectRoom; data: ProjectsOverview; eventId: number; prefix: string; canPresent: boolean;
-  onPresent: () => void; onOpen: (id: number) => void;
+  onPresent: () => void; onAnnounce: () => void; onOpen: (id: number) => void;
   setStatus: (id: number, status: string, deadlineMinutes?: number | null) => Promise<void>;
   run: (work: () => Promise<unknown>, text: string) => Promise<void>;
 }) {
@@ -176,32 +204,7 @@ function RoomPanel({ room, data, eventId, prefix, canPresent, onPresent, onOpen,
         </div>
       )}
 
-      <div className="card overflow-x-auto p-0">
-        <table className="w-full text-sm">
-          <thead className="bg-niat-warm-white text-left text-xs uppercase text-niat-muted">
-            <tr><th className="px-3 py-2">#</th><th className="px-3 py-2">Team / project</th><th className="px-3 py-2">Score</th>
-              {data.rubric.criteria.map((c) => <th key={c.key} className="px-2 py-2" title={c.label}>{c.label.split(' ')[0]}</th>)}<th className="px-3 py-2">Flags</th></tr>
-          </thead>
-          <tbody>
-            {room.projects.map((p) => (
-              <tr key={p.id} onClick={() => onOpen(p.id)}
-                className={`cursor-pointer border-t border-niat-line hover:bg-niat-cream/40 ${p.rank && p.rank <= SHORTLIST_SIZE ? 'bg-amber-50/40' : ''} ${p.disqualified ? 'opacity-50' : ''}`}>
-                <td className="px-3 py-2 font-bold">{p.rank ?? '–'}{p.tied && <span title="Tied score" className="text-amber-700">*</span>}</td>
-                <td className="px-3 py-2"><b>{prefix} {p.teamNumber}</b> · {p.projectName}
-                  {p.award && <span className="ml-1 text-xs font-bold">{AWARDS.find((a) => a.key === p.award)?.short}</span>}
-                  <div className="text-xs text-niat-muted">{p.theme}</div></td>
-                <td className="px-3 py-2 font-bold tabular-nums">
-                  {p.finalScore ?? (p.evalStatus === 'failed' ? '⚠' : '…')}<span className="text-xs text-niat-muted">/{data.rubric.maxTotal}</span>
-                  {p.adminScore !== null && <div className="text-xs font-normal text-niat-muted">judge (AI {p.evaluation?.total ?? '–'})</div>}
-                </td>
-                {data.rubric.criteria.map((c) => <td key={c.key} className="px-2 py-2 tabular-nums">{p.evaluation?.criteria.find((x) => x.key === c.key)?.score ?? '–'}</td>)}
-                <td className="px-3 py-2 text-xs">{flagsOf(p).map((f) => f.text).join(' · ')}</td>
-              </tr>
-            ))}
-            {!room.projects.length && <tr><td colSpan={9} className="px-3 py-6 text-center text-niat-muted">No submissions yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      <Leaderboard projects={room.projects} data={data} prefix={prefix} onOpen={onOpen} />
 
       <div className="card">
         <h3 className="font-bold">Winners for {room.name}</h3>
@@ -219,6 +222,10 @@ function RoomPanel({ room, data, eventId, prefix, canPresent, onPresent, onOpen,
         <div className="mt-3 flex flex-wrap gap-2">
           {!locked && <button className="btn-secondary py-2 text-sm" onClick={fillTop3}>Fill from top 3</button>}
           {!locked && <button className="btn-primary py-2 text-sm" onClick={() => run(() => api(`/events/${eventId}/projects/rooms/${room.id}/awards`, { body: awards }), 'Winners saved')}>Save winners</button>}
+          <button className="btn-primary py-2 text-sm" disabled={!room.projects.some((p) => p.award)} onClick={onAnnounce}
+            title={room.projects.some((p) => p.award) ? 'Reveal the winners on the projector' : 'Save the winners first'}>
+            🏆 Announce winners
+          </button>
           <button className="btn-secondary py-2 text-sm" onClick={() => run(() => api(`/events/${eventId}/projects/rooms/${room.id}/lock`, { body: { locked: !locked } }), locked ? 'Results unlocked' : 'Results locked')}>
             {locked ? 'Unlock results' : 'Lock results'}
           </button>

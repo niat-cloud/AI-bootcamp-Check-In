@@ -41,6 +41,7 @@ describe('Input Validation Schemas', () => {
   it('validates submission input', () => {
     const valid = {
       memberId: 42,
+      phone: '9876543210',
       projectName: 'StudyBud',
       theme: 'Student Life Problem Solver',
       problemStatement: 'Students struggle to find study groups and share notes effectively.',
@@ -56,6 +57,10 @@ describe('Input Validation Schemas', () => {
 
     // Rejects missing project name
     expect(() => submissionInput.parse({ ...valid, projectName: ' ' })).toThrow();
+
+    // Rejects a submission without the member's phone number
+    const { phone: _phone, ...withoutPhone } = valid;
+    expect(() => submissionInput.parse(withoutPhone)).toThrow();
   });
 
   it('validates review input', () => {

@@ -5,7 +5,7 @@ import { AppError } from '../lib/errors.js';
 import { maskPhone } from '../lib/phone.js';
 import { clientIp, rateLimiter } from '../lib/rateLimit.js';
 import { detailsInput, eventNotActiveError, registerAndSeat, requirePhone } from '../services/checkin.js';
-import { publicRooms, publicTeam, submissionInput, submitProject } from '../services/projects.js';
+import { memberInput, publicRooms, publicTeam, submissionInput, submitProject, verifyMember } from '../services/projects.js';
 import { getAssignment } from '../services/seating.js';
 
 /**
@@ -119,7 +119,15 @@ publicRouter.get('/events/:location/:slug/projects/teams/:teamId', async (req, r
   res.json(await publicTeam(event.id, Number(req.params.teamId)));
 });
 
-/** Submit or update the team's project. The link is checked before it is saved. */
+/** "It's me": the student confirms their name with the phone number they checked in with. */
+publicRouter.post('/events/:location/:slug/projects/teams/:teamId/verify', async (req, res) => {
+  const v = memberInput.parse(req.body);
+  lookupLimit(clientIp(req));
+  const event = await findActiveEvent(req);
+  res.json(await verifyMember(event.id, Number(req.params.teamId), v));
+});
+
+/** Submit the team's one project. The member's phone and the link are checked before it is saved. */
 publicRouter.post('/events/:location/:slug/projects/teams/:teamId', async (req, res) => {
   const v = submissionInput.parse(req.body);
   submitLimit(clientIp(req));
