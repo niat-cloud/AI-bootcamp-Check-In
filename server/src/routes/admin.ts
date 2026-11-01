@@ -1,7 +1,10 @@
 import { Router, type Request } from 'express';
 import * as XLSX from 'xlsx';
+import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { adminOf } from '../lib/auth.js';
 import { getDashboard, sourceCondition } from '../services/dashboard.js';
+import { removeRegistrations } from '../services/participants.js';
 import { loadEvent } from './events.js';
 
 /** Admin reporting endpoints mounted under /api/events/:id. */
@@ -69,17 +72,19 @@ function listFilters(query: Request['query'], params: unknown[]): string[] {
   return conds;
 }
 
-adminRouter.get('/participants', async (req, res) => {
-  const event = await loadEvent(Number((req.params as Record<string, string>).id));
-  const q = String(req.query.q ?? '').trim();
-  const params: unknown[] = [event.id];
-  const conds = ['ep.event_id = $1', ...listFilters(req.query, params)];
-  const roomId = Number(req.query.roomId);
+/**
+ * WHERE conditions for the participants list (and bulk removal): status and source filters, room, team,
+ * and the search box. `params` must already hold the event id as $1.
+ */
+function participantConditions(query: Request['query'], params: unknown[]): string[] {
+  const q = String(query.q ?? '').trim();
+  const conds = ['ep.event_id = $1', ...listFilters(query, params)];
+  const roomId = Number(query.roomId);
   if (Number.isInteger(roomId) && roomId > 0) {
     params.push(roomId);
     conds.push(`ep.room_id = $${params.length}`);
   }
-  const teamNumber = Number(req.query.team);
+  const teamNumber = Number(query.team);
   if (Number.isInteger(teamNumber) && teamNumber > 0) {
     params.push(teamNumber);
     conds.push(`t.team_number = $${params.length}`);
@@ -110,6 +115,13 @@ adminRouter.get('/participants', async (req, res) => {
       }
     }
   }
+  return conds;
+}
+
+adminRouter.get('/participants', async (req, res) => {
+  const event = await loadEvent(Number((req.params as Record<string, string>).id));
+  const params: unknown[] = [event.id];
+  const conds = participantConditions(req.query, params);
 
   const { rows } = await pool.query(
     `${PARTICIPANT_SELECT} WHERE ${conds.join(' AND ')}
@@ -123,6 +135,35 @@ adminRouter.get('/participants', async (req, res) => {
     params,
   );
   res.json({ total, rows });
+});
+
+const removeInput = z.union([
+  z.object({ ids: z.array(z.number().int().positive()).min(1).max(5000), includeArrived: z.boolean().optional() }),
+  z.object({ matching: z.object({ q: z.string().max(100).optional(), filter: z.string().max(20).optional(), source: z.string().max(100).optional() }) }),
+]);
+
+/**
+ * Removes registrations from this event: the ticked rows (`ids`) or everyone matching the list's search and
+ * filters (`matching`). By default only people who haven't arrived are removed. For ticked rows,
+ * includeArrived also removes seated or waiting people (a test check-in, say) and frees their seats.
+ * Removing by search never touches anyone who has arrived.
+ */
+adminRouter.post('/participants/remove', async (req, res) => {
+  const event = await loadEvent(Number((req.params as Record<string, string>).id));
+  const v = removeInput.parse(req.body);
+  const params: unknown[] = [event.id];
+  let where: string;
+  let includeArrived = false;
+  if ('ids' in v) {
+    params.push(v.ids);
+    where = `ep.event_id = $1 AND ep.id = ANY($${params.length}::int[])`;
+    includeArrived = Boolean(v.includeArrived);
+  } else {
+    where = participantConditions(v.matching, params).join(' AND ');
+  }
+  res.json(await removeRegistrations(event.id, where, params, {
+    includeArrived, actor: adminOf(req).email, reason: 'ids' in v ? 'selected' : 'search',
+  }));
 });
 
 adminRouter.get('/export', async (req, res) => {

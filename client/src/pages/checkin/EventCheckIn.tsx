@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, ApiError, type SeatAssignment } from '../../lib/api';
 import { atLeast } from '../../lib/device';
+import { digitsHint, typedPhone } from '../../lib/phone';
 import { ProgressPopup } from '../../components/kiosk/ProgressPopup';
 import { SeatReveal } from '../../components/kiosk/SeatReveal';
 import { KioskShell } from '../../components/kiosk/Shell';
@@ -322,8 +323,8 @@ function EntryStep({ event, phone, setPhone, error, onSubmit }: {
         <div {...step(5)} className="checkin-enter mt-5">
           <CheckinField label="Registered mobile number" prefix="+91" type="tel" inputMode="numeric" autoComplete="tel-national" maxLength={14}
             placeholder="98765 43210" value={phone} enterKeyHint="go"
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setPhone(e.target.value); setInvalid(null); }}
-            error={invalid ?? undefined} hint={invalid ? undefined : 'Use the same number you gave at registration.'} />
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setPhone(typedPhone(e.target.value)); setInvalid(null); }}
+            error={invalid ?? undefined} hint={invalid ? undefined : digitsHint(phone) ?? 'Use the same number you gave at registration.'} />
         </div>
         {error && (
           <CheckinNotice action={error.retry && digits ? (
@@ -397,7 +398,7 @@ function DetailsStep({ screen, phone, onBack, onNext }: {
   const needsParentPhone = !screen.known?.hasParentPhone;
 
   const set = (key: keyof Details) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [key]: e.target.value });
+    setForm({ ...form, [key]: key === 'parentPhone' ? typedPhone(e.target.value) : e.target.value });
     if (errors[key]) setErrors({ ...errors, [key]: undefined });
   };
 
@@ -406,6 +407,7 @@ function DetailsStep({ screen, phone, onBack, onNext }: {
     const found: typeof errors = {};
     if (form.name.trim().length < 2) found.name = 'Enter your full name.';
     if (needsParentPhone ? !PHONE_OK(form.parentPhone) : form.parentPhone && !PHONE_OK(form.parentPhone)) found.parentPhone = 'Enter a 10-digit mobile number.';
+    else if (form.parentPhone && normalizePhone(form.parentPhone) === phone) found.parentPhone = 'Enter your parent’s number. It can’t be the same as yours.';
     if (form.schoolCollege.trim().length < 2) found.schoolCollege = 'Enter your school or college.';
     if (form.location.trim().length < 2) found.location = 'Enter the area you’re coming from.';
     setErrors(found);
@@ -440,13 +442,13 @@ function DetailsStep({ screen, phone, onBack, onNext }: {
           autoComplete="name" autoCapitalize="words" enterKeyHint="next" maxLength={100} />
         {needsParentPhone ? (
           <CheckinField label="Parent’s mobile number" prefix="+91" type="tel" inputMode="numeric" value={form.parentPhone}
-            onChange={set('parentPhone')} error={errors.parentPhone} autoComplete="off" maxLength={14} enterKeyHint="next" />
+            onChange={set('parentPhone')} error={errors.parentPhone} hint={digitsHint(form.parentPhone)} autoComplete="off" enterKeyHint="next" />
         ) : (
           <p className="pl-1 text-left text-sm text-[var(--checkin-muted)]">Parent’s mobile number is already on file.</p>
         )}
         <CheckinField label="School or college" value={form.schoolCollege} onChange={set('schoolCollege')} error={errors.schoolCollege}
           autoComplete="organization" autoCapitalize="words" enterKeyHint="next" maxLength={150} />
-        <CheckinField label="Class (optional)" value={form.className} onChange={set('className')} autoComplete="off" enterKeyHint="next" maxLength={40} />
+        <CheckinField label="Class (optional)" value={form.className} onChange={set('className')} autoComplete="off" enterKeyHint="next" maxLength={150} />
         <CheckinField label="Area you’re coming from" value={form.location} onChange={set('location')} error={errors.location}
           hint="For example Madhapur, Gachibowli or Warangal." autoComplete="address-level2" autoCapitalize="words" enterKeyHint="done" maxLength={100} />
         <div className="pt-2"><CheckinButton type="submit">Review details</CheckinButton></div>
