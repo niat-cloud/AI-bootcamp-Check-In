@@ -19,7 +19,7 @@ export const detailsInput = z.object({
   phone: z.string().trim().min(1, 'Phone number is required').max(20),
   parentPhone: z.string().trim().max(20).optional(),
   schoolCollege: z.string().trim().min(2, 'School/College is required').max(150),
-  className: z.string().trim().max(40).optional(),
+  className: z.string().trim().max(150).optional(),
   location: z.string().trim().min(2, "The location you're coming from is required").max(100),
 });
 export type DetailsInput = z.infer<typeof detailsInput>;
@@ -83,6 +83,9 @@ export async function registerAndSeat(
 ): Promise<SeatAssignment> {
   const phone = requirePhone(v.phone);
   const parentPhone = v.parentPhone ? requirePhone(v.parentPhone, 'parent phone number') : null;
+  if (parentPhone && parentPhone === phone) {
+    throw new AppError(400, 'INVALID_PHONE', 'Your parent’s mobile number must be different from your own.');
+  }
   const name = v.name.replace(/\s+/g, ' ');
 
   const result = await withTransaction(async (client) => {

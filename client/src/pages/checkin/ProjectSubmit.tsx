@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../../lib/api';
 import { atLeast } from '../../lib/device';
+import { digitsHint, typedPhone } from '../../lib/phone';
 import {
   CheckinButton, CheckinField, CheckinNotice, CheckinShell, Seeker, Shield, StateCard,
 } from '../../components/checkin/CheckinUI';
@@ -355,8 +356,8 @@ function VerifyStep({ info, memberId, initialPhone, onBack, onVerify }: {
       <form onSubmit={submit} noValidate className="checkin-enter mt-5" style={{ '--i': 2 } as React.CSSProperties}>
         <CheckinField label="Your mobile number" prefix="+91" type="tel" inputMode="numeric" autoComplete="tel-national" maxLength={14}
           placeholder="98765 43210" value={phone} enterKeyHint="go" autoFocus={!initialPhone}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setPhone(e.target.value); setError(null); }}
-          error={error ?? undefined} hint={error ? undefined : 'The same number you entered when you got your seat.'} />
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setPhone(typedPhone(e.target.value)); setError(null); }}
+          error={error ?? undefined} hint={error ? undefined : digitsHint(phone) ?? 'The same number you entered when you got your seat.'} />
         <div className="mt-5 space-y-2 text-center">
           <CheckinButton type="submit" loading={busy} loadingLabel="Checking">Yes, it’s me · Continue</CheckinButton>
           <button type="button" onClick={onBack} disabled={busy} className="checkin-link px-2 py-2 text-sm">Not you? Choose another name</button>

@@ -1,3 +1,4 @@
+import ConfirmButton from '../../components/ConfirmButton';
 import { useEffect, useMemo, useState } from 'react';
 import { api, type EventInfo } from '../../lib/api';
 import { downloadCsv, FIELDS, guessMapping, normalizePhone, parseFile, type FieldKey, type ParsedSheet } from '../../lib/parseSheet';
@@ -25,8 +26,10 @@ export default function Import() {
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [participantCount, setParticipantCount] = useState<number | null>(null);
 
+  const [importsKey, setImportsKey] = useState(0);
   const loadCount = () => {
     if (event) api<{ total: number }>(`/events/${event.id}/participants?q=`).then((r) => setParticipantCount(r.total));
+    setImportsKey((k) => k + 1);
   };
   useEffect(loadCount, [event?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -83,7 +86,7 @@ export default function Import() {
     try {
       // Send every row (including problem rows) so the server's summary accounts for all of them.
       const result = await api<ImportSummary>(`/events/${event.id}/import`, {
-        body: { rows: analysed.map(({ issue: _issue, ...r }) => r) },
+        body: { rows: analysed.map(({ issue: _issue, ...r }) => r), fileName: file?.name },
       });
       setSummary(result);
       setSheet(null);
@@ -180,6 +183,7 @@ export default function Import() {
 
       {summary && <SummaryCard summary={summary} />}
       {!sheet && <CopyFromPrevious event={event} onDone={loadCount} />}
+      {!sheet && <PastImports event={event} refreshKey={importsKey} onChanged={loadCount} />}
     </div>
   );
 }
@@ -242,6 +246,72 @@ function Stat({ label, value, warn }: { label: string; value: number; warn?: boo
     <div>
       <dt className="text-sm text-niat-muted">{label}</dt>
       <dd className={`text-2xl font-bold ${warn ? 'text-amber-700' : ''}`}>{value}</dd>
+    </div>
+  );
+}
+
+interface ImportBatch {
+  id: number;
+  kind: 'file' | 'copy';
+  label: string;
+  addedCount: number;
+  createdBy: string | null;
+  createdAt: string;
+  removedAt: string | null;
+  remaining: number;
+  arrived: number;
+}
+
+/** Every import of this event, with a Remove button for a wrong one (people who already arrived are kept). */
+export function PastImports({ event, refreshKey, onChanged }: { event: EventInfo; refreshKey: number; onChanged: () => void }) {
+  const [data, setData] = useState<{ batches: ImportBatch[]; earlier: { remaining: number; arrived: number } } | null>(null);
+  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const load = () => api<typeof data>(`/events/${event.id}/imports`).then(setData).catch(() => {});
+  useEffect(() => { load(); }, [event.id, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const remove = async (id: number | 'earlier') => {
+    try {
+      const r = await api<{ removed: number; kept: number }>(`/events/${event.id}/imports/${id}/remove`, { method: 'POST' });
+      setMessage({ tone: 'ok', text: `Removed ${r.removed} from this event.${r.kept ? ` Kept ${r.kept} who already arrived (remove them on the Participants page if needed).` : ''}` });
+      load();
+      onChanged();
+    } catch (err) {
+      setMessage({ tone: 'error', text: (err as Error).message });
+    }
+  };
+
+  const rows = [
+    ...(data?.batches ?? []).map((b) => ({ key: String(b.id), id: b.id as number | 'earlier', title: b.label,
+      sub: `${new Date(b.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}${b.createdBy ? ` · ${b.createdBy}` : ''} · added ${b.addedCount}`,
+      remaining: b.remaining, arrived: b.arrived })),
+    ...(data && data.earlier.remaining > 0 ? [{ key: 'earlier', id: 'earlier' as const, title: 'Earlier imports',
+      sub: 'Imported before imports were recorded', remaining: data.earlier.remaining, arrived: data.earlier.arrived }] : []),
+  ];
+  if (!rows.length) return null;
+
+  return (
+    <div className="card mt-6">
+      <h2 className="text-lg font-semibold">Past imports</h2>
+      <p className="mt-1 text-sm text-niat-muted">Imported the wrong list? Remove it here. Only people who haven’t arrived are removed.</p>
+      {message && <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${message.tone === 'ok' ? 'bg-emerald-50 text-emerald-900' : 'bg-niat-pink text-niat-maroon-dark'}`}>{message.text}</p>}
+      <ul className="mt-3 divide-y divide-niat-line">
+        {rows.map((r) => (
+          <li key={r.key} className="flex flex-wrap items-center gap-3 py-3">
+            <div className="mr-auto min-w-0">
+              <div className="truncate font-semibold">{r.title}</div>
+              <div className="text-xs text-niat-muted">{r.sub}</div>
+            </div>
+            <span className="text-sm text-niat-muted">{r.remaining} registered · {r.arrived} arrived</span>
+            {event.status !== 'completed' && r.remaining > r.arrived && (
+              <ConfirmButton className="btn-danger py-1.5 text-sm"
+                confirmText={`Remove the ${r.remaining - r.arrived} people from “${r.title}” who haven’t arrived?`}
+                onConfirm={() => remove(r.id)}>
+                Remove this import
+              </ConfirmButton>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

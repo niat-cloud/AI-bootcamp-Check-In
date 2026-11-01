@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, type SeatAssignment } from '../../lib/api';
 import { atLeast } from '../../lib/device';
+import { typedPhone } from '../../lib/phone';
 import { CtaButton } from '../../components/kiosk/CtaButton';
 import { FloatingInput, Notice } from '../../components/kiosk/Form';
 import { ProgressPopup } from '../../components/kiosk/ProgressPopup';
@@ -37,14 +38,15 @@ export default function WalkInForm({
   const [busy, setBusy] = useState(false);
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [key]: e.target.value });
+    const value = key === 'phone' || key === 'parentPhone' ? typedPhone(e.target.value) : e.target.value;
+    setForm({ ...form, [key]: value });
     if (errors[key]) setErrors({ ...errors, [key]: '' });
   };
 
   const ok = {
     name: form.name.trim().length >= 2,
     phone: PHONE.test(form.phone.trim()),
-    parentPhone: PHONE.test(form.parentPhone.trim()),
+    parentPhone: PHONE.test(form.parentPhone.trim()) && form.parentPhone.trim() !== form.phone.trim(),
     location: form.location.trim().length >= 2,
     schoolCollege: form.schoolCollege.trim().length >= 2,
   };
@@ -54,7 +56,11 @@ export default function WalkInForm({
     const e: Record<string, string> = {};
     if (!ok.name) e.name = 'Please enter your full name';
     if (!ok.phone) e.phone = 'Enter a valid 10-digit mobile number';
-    if (!ok.parentPhone) e.parentPhone = 'Enter a valid 10-digit mobile number';
+    if (!ok.parentPhone) {
+      e.parentPhone = PHONE.test(form.parentPhone.trim())
+        ? 'The parent’s number must be different from the student’s'
+        : 'Enter a valid 10-digit mobile number';
+    }
     if (!ok.location) e.location = "Please enter the location you're coming from";
     if (!ok.schoolCollege) e.schoolCollege = 'Please enter your school or college';
     setErrors(e);
