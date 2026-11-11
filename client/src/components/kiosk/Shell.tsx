@@ -1,15 +1,14 @@
 import logo from '../../assets/niat-logo.png';
-import { Shield } from '../checkin/CheckinUI';
 
 const monthYear = (date?: string) =>
   date ? new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }).toUpperCase() : '';
 
 export function KioskHeader({ date, place, onHome, minimal }: { date?: string; place?: string; onHome?: () => void; minimal?: boolean }) {
-  // Student's own phone: just the shield, so nothing competes with the seat.
+  // Student's own phone: the NIAT logo with its name, small, so nothing competes with the seat.
   if (minimal) {
     return (
       <header className="relative z-10 flex justify-center px-4 pb-1 pt-[max(1rem,env(safe-area-inset-top))]">
-        <Shield size={44} />
+        <img src={logo} alt="NIAT, NxtWave of Innovation in Advanced Technologies" className="h-10 w-auto select-none" draggable={false} />
       </header>
     );
   }

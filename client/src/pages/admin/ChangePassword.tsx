@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, type AdminUser } from '../../lib/api';
+import { api, setAdminAuth, type AdminUser } from '../../lib/api';
 import { AuthField, AuthFrame, FormAlert, passwordProblem } from './AuthFrame';
 
 /** Shown on first sign-in with the default password, before anything else is reachable. */
@@ -27,7 +27,9 @@ export default function ChangePassword({ user, forced, onDone, onSignOut }: {
     setBusy(true);
     setError(null);
     try {
-      const res = await api<{ user: AdminUser }>('/admin/auth/change-password', { body: { currentPassword: current, newPassword: next } });
+      const res = await api<{ user: AdminUser; token?: string }>('/admin/auth/change-password', { body: { currentPassword: current, newPassword: next } });
+      // The new password signs out other devices; keep this one signed in with the fresh token.
+      if (res.token) setAdminAuth(res.token, res.user.email);
       onDone(res.user);
     } catch (err) {
       setError((err as Error).message);

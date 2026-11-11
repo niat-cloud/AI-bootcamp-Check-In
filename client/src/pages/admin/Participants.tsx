@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ConfirmButton from '../../components/ConfirmButton';
+import { classLabel, GRADE_LABEL, LUNCH_LABEL, STREAM_LABEL, type Grade, type Lunch, type Stream } from '../../lib/answers';
 import { api, formatTime, type ApiError } from '../../lib/api';
 import { NoEvent, PageHeader, useAdmin } from './AdminLayout';
 
@@ -9,6 +10,7 @@ interface ParticipantRow {
   name: string;
   phone: string;
   parentPhone: string | null;
+  parentName: string | null;
   schoolCollege: string;
   className: string | null;
   location: string | null;
@@ -19,6 +21,10 @@ interface ParticipantRow {
   teamNumber: number | null;
   seatLabel: string | null;
   checkInTime: string | null;
+  grade: Grade | null;
+  stream: Stream | null;
+  studyDetail: string | null;
+  lunch: Lunch | null;
 }
 
 /** Only people who haven't arrived can be removed; anyone checked in or waiting keeps their place. */
@@ -30,13 +36,19 @@ const FILTERS = [
   { key: 'pending', label: 'Not arrived' },
   { key: 'waiting', label: 'Waiting for a seat' },
   { key: 'walk_in', label: 'Walk-ins' },
+  { key: 'veg', label: '🥗 Veg' },
+  { key: 'non_veg', label: '🍗 Non-veg' },
 ];
 
 export default function Participants() {
   const { event } = useAdmin();
   const [q, setQ] = useState('');
   // The dashboard links here with ?filter=checked_in and the like.
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  // The dashboard's class breakdown links here with ?grade=class_12 or ?stream=maths.
+  const grade = params.get('grade') as Grade | null;
+  const stream = params.get('stream') as Stream | null;
+  const answerFilter = grade && GRADE_LABEL[grade] ? `&grade=${grade}` : stream && STREAM_LABEL[stream] ? `&stream=${stream}` : '';
   const [filter, setFilter] = useState(() => {
     const initial = params.get('filter');
     return FILTERS.some((f) => f.key === initial) ? initial! : 'all';
@@ -50,11 +62,23 @@ export default function Participants() {
     if (!event) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      api(`/events/${event.id}/participants?q=${encodeURIComponent(q.trim())}&filter=${filter}`, { signal: controller.signal })
+      api(`/events/${event.id}/participants?q=${encodeURIComponent(q.trim())}&filter=${filter}${answerFilter}`, { signal: controller.signal })
         .then(setData).catch(() => {});
     }, 150);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [event, q, filter, reloadKey]);
+  }, [event, q, filter, answerFilter, reloadKey]);
+
+  /** A volunteer fixes a lunch choice: tapping the chip switches Veg and Non-veg. */
+  const toggleLunch = async (r: ParticipantRow) => {
+    if (!event) return;
+    const lunch: Lunch = r.lunch === 'veg' ? 'non_veg' : 'veg';
+    try {
+      await api(`/events/${event.id}/participants/${r.id}/lunch`, { method: 'PATCH', body: { lunch } });
+      setData((d) => d && { ...d, rows: d.rows.map((x) => (x.id === r.id ? { ...x, lunch } : x)) });
+    } catch (err) {
+      setToast({ tone: 'error', text: (err as ApiError).message });
+    }
+  };
 
   // A new search or filter starts a new selection.
   useEffect(() => setSelected(new Set()), [q, filter]);
@@ -104,6 +128,13 @@ export default function Participants() {
         </div>
       </div>
 
+      {answerFilter && (
+        <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-niat-cream px-3 py-1 text-sm font-semibold text-niat-maroon ring-1 ring-niat-gold/40">
+          Showing {grade && GRADE_LABEL[grade] ? GRADE_LABEL[grade] : STREAM_LABEL[stream!]}
+          <button type="button" aria-label="Clear class filter" onClick={() => { params.delete('grade'); params.delete('stream'); setParams(params, { replace: true }); }}>×</button>
+        </p>
+      )}
+
       {toast && (
         <div role="status" className={`mt-4 flex justify-between gap-3 rounded-xl px-4 py-3 text-sm font-medium ${toast.tone === 'ok' ? 'bg-emerald-50 text-emerald-900' : 'bg-niat-pink text-niat-maroon-dark'}`}>
           <span>{toast.tone === 'ok' ? '✓ ' : '⚠ '}{toast.text}</span>
@@ -147,6 +178,7 @@ export default function Participants() {
                 </th>
               )}
               <th className="px-4 py-3">Name</th><th className="px-3">Phone</th><th className="px-3">School/College</th>
+              <th className="px-3">Class</th><th className="px-3">Lunch</th>
               <th className="px-3">Coming From</th><th className="px-3">Source</th>
               <th className="px-3">Type</th><th className="px-3">Room</th><th className="px-3">Team</th><th className="px-3">Seat</th><th className="px-3">Check-in</th>
             </tr>
@@ -161,9 +193,21 @@ export default function Participants() {
                       title={removable(r) ? undefined : 'Already arrived: removing frees their seat'} />
                   </td>
                 )}
-                <td className="px-4 py-2.5 font-medium">{r.name}{r.className && <span className="ml-1 text-xs text-niat-muted/70">({r.className})</span>}</td>
+                <td className="px-4 py-2.5 font-medium">{r.name}</td>
                 <td className="px-3 font-mono">{r.phone}</td>
                 <td className="px-3">{r.schoolCollege}</td>
+                <td className="px-3 text-xs">
+                  {r.grade ? classLabel(r as { grade: Grade; stream: Stream | null; studyDetail: string | null })
+                    : r.className ?? <span className="text-niat-muted/40">—</span>}
+                </td>
+                <td className="px-3">
+                  {r.lunch ? (
+                    <button type="button" disabled={!canEdit} onClick={() => toggleLunch(r)} title={canEdit ? 'Tap to switch Veg / Non-veg' : undefined}
+                      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${r.lunch === 'veg' ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200' : 'bg-niat-pink text-niat-maroon ring-1 ring-niat-maroon/20'}`}>
+                      {LUNCH_LABEL[r.lunch]}
+                    </button>
+                  ) : <span className="text-niat-muted/40">—</span>}
+                </td>
                 <td className="px-3">
                   {r.location
                     ? <span className="inline-flex items-center rounded-md bg-niat-cream px-2 py-0.5 text-xs font-semibold text-niat-maroon ring-1 ring-niat-gold/40">{r.location}</span>
@@ -185,7 +229,7 @@ export default function Participants() {
                 </td>
               </tr>
             ))}
-            {data && data.rows.length === 0 && <tr><td colSpan={11} className="px-4 py-8 text-center text-niat-muted">No participants match.</td></tr>}
+            {data && data.rows.length === 0 && <tr><td colSpan={13} className="px-4 py-8 text-center text-niat-muted">No participants match.</td></tr>}
           </tbody>
         </table>
       </div>

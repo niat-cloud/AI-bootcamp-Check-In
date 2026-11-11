@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, type SeatAssignment } from '../../lib/api';
 import { atLeast } from '../../lib/device';
 import { typedPhone } from '../../lib/phone';
+import { GRADE_OPTIONS, hasStream, LUNCH_OPTIONS, STREAM_OPTIONS, type Grade, type Lunch, type Stream } from '../../lib/answers';
 import { CtaButton } from '../../components/kiosk/CtaButton';
 import { FloatingInput, Notice } from '../../components/kiosk/Form';
 import { ProgressPopup } from '../../components/kiosk/ProgressPopup';
@@ -28,11 +29,16 @@ export default function WalkInForm({
   const [form, setForm] = useState({
     name: initialName,
     phone: initialPhone,
+    parentName: '',
     parentPhone: '',
     schoolCollege: '',
-    className: '',
     location: '',
   });
+  const [grade, setGrade] = useState<Grade | null>(null);
+  const [stream, setStream] = useState<Stream | null>(null);
+  const [studyDetail, setStudyDetail] = useState('');
+  const [lunch, setLunch] = useState<Lunch | null>(null);
+  const needsDetail = grade === 'other' || (hasStream(grade) && stream === 'other');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,9 +52,12 @@ export default function WalkInForm({
   const ok = {
     name: form.name.trim().length >= 2,
     phone: PHONE.test(form.phone.trim()),
+    parentName: form.parentName.trim().length >= 2,
     parentPhone: PHONE.test(form.parentPhone.trim()) && form.parentPhone.trim() !== form.phone.trim(),
     location: form.location.trim().length >= 2,
     schoolCollege: form.schoolCollege.trim().length >= 2,
+    grade: Boolean(grade) && (!hasStream(grade) || Boolean(stream)) && (!needsDetail || studyDetail.trim().length >= 2),
+    lunch: Boolean(lunch),
   };
   const filled = Object.values(ok).filter(Boolean).length;
 
@@ -61,8 +70,11 @@ export default function WalkInForm({
         ? 'The parent’s number must be different from the student’s'
         : 'Enter a valid 10-digit mobile number';
     }
-    if (!ok.location) e.location = "Please enter the location you're coming from";
+    if (!ok.parentName) e.parentName = 'Please enter your parent’s name';
+    if (!ok.location) e.location = "Please enter your location";
     if (!ok.schoolCollege) e.schoolCollege = 'Please enter your school or college';
+    if (!ok.grade) e.grade = !grade ? 'Choose 12th or 11th' : hasStream(grade) && !stream ? 'Choose the stream' : 'Type your class or subjects';
+    if (!ok.lunch) e.lunch = 'Choose Veg or Non-veg';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -73,7 +85,8 @@ export default function WalkInForm({
     setBusy(true);
     setServerError(null);
     try {
-      onAssigned(await atLeast(api<SeatAssignment>(endpoint, { body: form }), 900));
+      const answers = { grade, stream: hasStream(grade) ? stream : null, studyDetail: studyDetail.trim() || null, lunch };
+      onAssigned(await atLeast(api<SeatAssignment>(endpoint, { body: { ...form, answers } }), 900));
     } catch (err) {
       setBusy(false);
       try {
@@ -99,14 +112,14 @@ export default function WalkInForm({
         className="mt-6 animate-scale-in rounded-[var(--radius-card)] border border-niat-line bg-white/90 p-5 text-left shadow-[var(--shadow-card)] backdrop-blur sm:mt-7 sm:p-8"
       >
         {/* Progress: fills as each required field becomes valid (5 fields) */}
-        <div className="mb-5 flex items-center gap-3" aria-label={`${filled} of 5 details complete`}>
+        <div className="mb-5 flex items-center gap-3" aria-label={`${filled} of 8 details complete`}>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-niat-line/60">
             <div
               className="h-full rounded-full bg-gradient-to-r from-niat-maroon to-niat-gold transition-[width] duration-500 ease-[var(--ease-out-soft)]"
-              style={{ width: `${(filled / 5) * 100}%` }}
+              style={{ width: `${(filled / 8) * 100}%` }}
             />
           </div>
-          <span className="text-xs font-bold tabular-nums text-niat-muted">{filled}/5</span>
+          <span className="text-xs font-bold tabular-nums text-niat-muted">{filled}/8</span>
         </div>
 
         <div className="space-y-4">
@@ -150,8 +163,20 @@ export default function WalkInForm({
               />
             </div>,
             <FloatingInput
+              key="pn"
+              label="Parent’s Name"
+              value={form.parentName}
+              onChange={set('parentName')}
+              error={errors.parentName}
+              valid={ok.parentName}
+              autoComplete="off"
+              autoCapitalize="words"
+              maxLength={100}
+              enterKeyHint="next"
+            />,
+            <FloatingInput
               key="loc"
-              label="The location you're coming from"
+              label="Location"
               value={form.location}
               onChange={set('location')}
               error={errors.location}
@@ -172,14 +197,24 @@ export default function WalkInForm({
               autoCapitalize="words"
               enterKeyHint="next"
             />,
-            <FloatingInput
-              key="c"
-              label="Class (optional)"
-              value={form.className}
-              onChange={set('className')}
-              autoComplete="off"
-              enterKeyHint="done"
-            />,
+            <ChipGroup key="g" label="Current education" error={errors.grade} value={grade}
+              options={GRADE_OPTIONS} onPick={(v) => { setGrade(v); setStream(null); setStudyDetail(''); setErrors({ ...errors, grade: '' }); }} />,
+            ...(hasStream(grade) ? [
+              <label key="st" className="block">
+                <span className="mb-2 block pl-1 text-sm font-bold text-niat-text">Educational stream</span>
+                <select className="input py-3" value={stream ?? ''} onChange={(e) => { setStream(e.target.value as Stream); setErrors({ ...errors, grade: '' }); }}>
+                  <option value="" disabled>Select the stream</option>
+                  {STREAM_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>,
+            ] : []),
+            ...(grade && (needsDetail || grade === 'college') ? [
+              <FloatingInput key="sd" label={grade === 'college' ? 'Course (optional)' : grade === 'other' ? 'Class' : 'Subjects'}
+                value={studyDetail} onChange={(e) => setStudyDetail(e.target.value)} maxLength={100} autoComplete="off" autoCapitalize="words" />,
+            ] : []),
+            <ChipGroup key="l" label="Lunch" error={errors.lunch} value={lunch}
+              options={LUNCH_OPTIONS.map((o) => ({ ...o, label: `${o.icon} ${o.label}` }))}
+              onPick={(v) => { setLunch(v); setErrors({ ...errors, lunch: '' }); }} />,
           ].map((field, i) => (
             <div key={i} className="stagger animate-fade-up" style={{ '--i': i + 2 } as React.CSSProperties}>
               {field}
@@ -216,5 +251,29 @@ export default function WalkInForm({
         </CtaButton>
       </div>
     </div>
+  );
+}
+
+/** One tap answers for the gate form: class, subjects, lunch. */
+function ChipGroup<T extends string>({ label, value, options, onPick, error }: {
+  label: string; value: T | null; options: { value: T; label: string; sub?: string }[]; onPick: (v: T) => void; error?: string;
+}) {
+  return (
+    <fieldset>
+      <legend className="mb-2 pl-1 text-sm font-bold text-niat-text">{label}</legend>
+      <div className="flex flex-wrap gap-2">
+        {options.map((o) => {
+          const on = value === o.value;
+          return (
+            <button key={o.value} type="button" aria-pressed={on} onClick={() => onPick(o.value)} title={o.sub}
+              className={`cursor-pointer rounded-full px-3.5 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-niat-gold/50 ${
+                on ? 'bg-niat-maroon text-white shadow-sm' : 'bg-niat-warm-white text-niat-text ring-1 ring-niat-line hover:ring-niat-maroon/40'}`}>
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+      {error && <p className="mt-1.5 pl-1 text-sm font-semibold text-niat-maroon">{error}</p>}
+    </fieldset>
   );
 }

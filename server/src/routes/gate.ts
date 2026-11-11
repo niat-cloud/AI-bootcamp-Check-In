@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool, withTransaction } from '../db/pool.js';
+import { answersInput } from '../lib/answers.js';
 import { AppError } from '../lib/errors.js';
 import { detailsInput, registerAndSeat, searchEvent, waitingListError } from '../services/checkin.js';
 import { assignSeatTx, getAssignment } from '../services/seating.js';
@@ -36,6 +37,10 @@ gateRouter.post('/assign', async (req, res) => {
 });
 
 gateRouter.post('/walk-in', async (req, res) => {
-  const v = detailsInput.extend({ parentPhone: z.string().trim().min(1, 'Parent phone number is required') }).parse(req.body);
-  res.status(201).json(await registerAndSeat(eventIdOf(req.params), v, { rejectIfRegistered: true }));
+  const v = detailsInput.extend({
+    parentPhone: z.string().trim().min(1, 'Parent phone number is required'),
+    parentName: z.string().trim().min(2, 'Parent’s name is required').max(100),
+  }).parse(req.body);
+  const answers = req.body?.answers ? answersInput.parse(req.body.answers) : null;
+  res.status(201).json(await registerAndSeat(eventIdOf(req.params), v, { rejectIfRegistered: true, answers }));
 });

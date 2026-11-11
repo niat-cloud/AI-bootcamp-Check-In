@@ -76,6 +76,14 @@ export interface DashboardData {
   sources: SourceRow[];
   areas: Breakdown;
   schools: Breakdown;
+  /** Check-in answers of everyone who arrived. Stream counts are for school classes only. */
+  answers: { lunch: AnswerCounts; grade: AnswerCounts; stream: AnswerCounts };
+}
+
+export interface AnswerCounts {
+  counts: Record<string, number>;
+  /** Arrived without answering (seated at the gate, or before the questions existed). */
+  notAnswered: number;
 }
 
 /**

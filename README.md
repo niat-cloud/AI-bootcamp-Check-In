@@ -73,10 +73,22 @@ npm test     # unit tests; with DATABASE_URL set, also the full DB scenarios (in
    - `DATABASE_URL`: the Supabase **Transaction pooler** connection string (port **6543**). Write any `@` in the password as `%40`.
    - `DATABASE_SSL` = `true`
    - `AUTH_SECRET`: a long random string that signs admin sessions. If it isn't set, a key derived from `DATABASE_URL` is used.
-   - `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` (optional): the first super admin.
+   - `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD`: the first super admin. **Required in production**: the server refuses to create a super admin with the documented default password on Vercel.
    - `EVENT_TIMEZONE` = `Asia/Kolkata` (optional)
    - `OPENAI_API_KEY` (main), `GEMINI_API_KEY` and/or `ANTHROPIC_API_KEY`: API keys for AI project scoring. Every provider with a key is used in that order: if one fails for a project, the next one scores it. `OPENAI_MODEL`, `GEMINI_MODEL` and `PROJECT_EVAL_MODEL` (Claude) pick the models.
    - `BROWSERLESS_TOKEN` (optional): Browserless headless browser token to render client-side Lovable apps and capture screenshots for the AI evaluator.
-3. Deploy. The serverless function does not create database tables. Create them by running `npm run migrate` locally against the same database.
+3. **Before every deploy that adds a migration**, run `npm run migrate` locally against the production database (`DATABASE_URL` set in your shell). The serverless function never changes the schema. A local `npm run dev` pointed at a remote database doesn't either, unless `ALLOW_REMOTE_MIGRATE=1` is set.
+4. Deploy, then open `/api/health`. It answers `{"ok":true,"db":"up","migration":"013_hardening.sql"}`; the migration name must match the newest file in `server/src/db/migrations`.
 
 Note: Vercel limits request bodies to 4.5 MB, which is plenty for participant imports of a few thousand rows.
+
+## Operations (event day)
+
+- **Health:** `GET /api/health` checks the database and reports the schema version. Point a free uptime monitor (UptimeRobot, Better Stack) at it on event days.
+- **Tracing a problem:** every API response carries an `x-request-id` header, every error body has `requestId`, and server errors show its last 8 characters to the user as "Ref: …". Each request is one JSON line in the Vercel logs; search for the id. Set `LOG_REQUESTS=false` to silence the per-request lines.
+- **Audit:** admin changes (lunch edits, admin approvals and roles, project reviews, awards, result locks, deleted submissions) are stored in the `admin_audit` table; seat changes and removals in `allocation_log`.
+- **Signing out everywhere:** changing the password signs the admin out on every other device. `POST /api/admin/auth/logout-all` does the same without a password change (a lost gate laptop).
+- **Backups:** confirm Supabase daily backups are on for the project's plan. Before each event and after check-in closes, take a manual copy: `pg_dump "$DATABASE_URL" -Fc -f bootcamp-$(date +%F).dump`, and export the participant list from Admin → Export as a second safety net.
+- **Load test:** with `npm run demo` running, `npx tsx demo/loadtest.ts 130 25` simulates 130 walk-ins, 25 at a time, reports p50/p95 per step and checks that no seat was given twice. Then `npm run demo:reset`.
+- **CI:** `.github/workflows/ci.yml` builds both apps and runs every test, including the database tests against a Postgres service. In Vercel → Settings → Git, require it to pass before production deploys.
+

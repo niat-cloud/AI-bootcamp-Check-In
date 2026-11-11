@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { formatDate } from '../../lib/api';
 import { NoEvent, useAdmin } from './AdminLayout';
+import { ClassCard, LunchCard } from './dashboard/Answers';
 import { ArrivalsChart } from './dashboard/ArrivalsChart';
 import { Attention } from './dashboard/Attention';
 import { CallList } from './dashboard/CallList';
@@ -101,6 +102,7 @@ export default function Dashboard() {
             <BreakdownCard title="Top schools and colleges" subtitle="Where people study" data={data.schools}
               empty="No schools or colleges yet." othersLabel="schools and colleges" missingLabel="School not given" />
           </div>
+          <ClassCard data={data} />
           <div ref={callListRef} className="scroll-mt-4">
             <CallList eventId={event.id} sources={data.sources} source={callSource} onSourceChange={setCallSource} version={data.stats.arrived} />
           </div>
@@ -126,6 +128,7 @@ function LiveView({ data, now, showCallList }: { data: DashboardData; now: numbe
         <RoomCapacity data={data} className="lg:col-span-7" />
         <WaitingList data={data} now={now} className="lg:col-span-5" />
       </div>
+      <LunchCard data={data} />
       <TeamGrid data={data} />
     </div>
   );

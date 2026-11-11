@@ -2,7 +2,10 @@ import { Router, type Request } from 'express';
 import * as XLSX from 'xlsx';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { GRADES, LUNCH, STREAMS } from '../lib/answers.js';
 import { adminOf } from '../lib/auth.js';
+import { notFound } from '../lib/errors.js';
+import { audit } from '../lib/audit.js';
 import { getDashboard, sourceCondition } from '../services/dashboard.js';
 import { removeRegistrations } from '../services/participants.js';
 import { loadEvent } from './events.js';
@@ -12,9 +15,21 @@ export const adminRouter = Router({ mergeParams: true });
 
 const TZ = process.env.EVENT_TIMEZONE || 'Asia/Kolkata';
 
+// Every open dashboard polls every 5 s; within 3 s they share one computation, and an unchanged result
+// answers 304 through Express's ETag (ARCH-ITEM-2.2). Per server instance, which is what matters on a burst.
+const DASHBOARD_TTL_MS = 3000;
+const dashboardCache = new Map<number, { at: number; data: Promise<unknown> }>();
+
 adminRouter.get('/dashboard', async (req, res) => {
   const event = await loadEvent(Number((req.params as Record<string, string>).id));
-  res.json(await getDashboard(event));
+  const now = Date.now();
+  let hit = dashboardCache.get(event.id);
+  if (!hit || now - hit.at > DASHBOARD_TTL_MS) {
+    hit = { at: now, data: getDashboard(event) };
+    dashboardCache.set(event.id, hit);
+    hit.data.catch(() => dashboardCache.delete(event.id));
+  }
+  res.json(await hit.data);
 });
 
 /** Seat-level view of every team, for the Teams overview. */
@@ -43,10 +58,11 @@ adminRouter.get('/teams', async (req, res) => {
 });
 
 const PARTICIPANT_SELECT = `
-  SELECT ep.id, p.name, p.phone, p.parent_phone AS "parentPhone", p.school_college AS "schoolCollege",
+  SELECT ep.id, p.name, p.phone, p.parent_phone AS "parentPhone", p.parent_name AS "parentName", p.school_college AS "schoolCollege",
     p.class AS "className", p.location, ep.source, ep.registration_type AS "registrationType", ep.status,
     r.id AS "roomId", r.name AS room, t.team_number AS "teamNumber", ep.seat_label AS "seatLabel",
-    ep.check_in_time AS "checkInTime", ep.arrived_at AS "arrivedAt"
+    ep.check_in_time AS "checkInTime", ep.arrived_at AS "arrivedAt",
+    ep.grade, ep.stream, ep.study_detail AS "studyDetail", ep.lunch
   FROM event_participants ep
   JOIN participants p ON p.id = ep.participant_id
   LEFT JOIN rooms r ON r.id = ep.room_id
@@ -63,6 +79,12 @@ function listFilters(query: Request['query'], params: unknown[]): string[] {
   if (filter === 'pending') conds.push(`ep.seat_id IS NULL AND ep.status = 'registered'`);
   if (filter === 'waiting') conds.push(`ep.status = 'waiting'`);
   if (filter === 'walk_in') conds.push(`ep.registration_type = 'walk_in'`);
+  if (filter === 'veg' || filter === 'non_veg') conds.push(`ep.lunch = '${filter}'`);
+  // Class and stream filters, from the dashboard's class breakdown.
+  const grade = String(query.grade ?? '');
+  if (grade in GRADES) { params.push(grade); conds.push(`ep.grade = $${params.length}`); }
+  const stream = String(query.stream ?? '');
+  if (stream in STREAMS) { params.push(stream); conds.push(`ep.stream = $${params.length}`); }
   const source = typeof query.source === 'string' ? query.source.trim().slice(0, 100) : '';
   if (source) {
     const { sql, param } = sourceCondition(source, params.length + 1);
@@ -137,6 +159,19 @@ adminRouter.get('/participants', async (req, res) => {
   res.json({ total, rows });
 });
 
+/** A volunteer corrects a student's lunch choice (they changed their mind, or tapped the wrong one). */
+adminRouter.patch('/participants/:epId/lunch', async (req, res) => {
+  const event = await loadEvent(Number((req.params as Record<string, string>).id));
+  const { lunch } = z.object({ lunch: z.enum(['veg', 'non_veg']).nullable() }).parse(req.body);
+  const { rowCount } = await pool.query(
+    'UPDATE event_participants SET lunch = $3 WHERE id = $1 AND event_id = $2',
+    [Number(req.params.epId), event.id, lunch],
+  );
+  if (!rowCount) throw notFound('Participant');
+  await audit(req, 'participant.lunch', { eventId: event.id, target: req.params.epId, details: { lunch } });
+  res.json({ lunch });
+});
+
 const removeInput = z.union([
   z.object({ ids: z.array(z.number().int().positive()).min(1).max(5000), includeArrived: z.boolean().optional() }),
   z.object({ matching: z.object({ q: z.string().max(100).optional(), filter: z.string().max(20).optional(), source: z.string().max(100).optional() }) }),
@@ -180,9 +215,12 @@ adminRouter.get('/export', async (req, res) => {
   const data = rows.map((r) => ({
     Name: r.name,
     Phone: r.phone,
+    'Parent Name': r.parentName ?? '',
     'Parent Phone': r.parentPhone ?? '',
     'School/College': r.schoolCollege,
-    Class: r.className ?? '',
+    Class: r.grade ? GRADES[r.grade as keyof typeof GRADES] : (r.className ?? ''),
+    Stream: r.stream === 'other' ? (r.studyDetail ?? 'Other') : r.stream ? STREAMS[r.stream as keyof typeof STREAMS] : (r.grade === 'college' || r.grade === 'other' ? r.studyDetail ?? '' : ''),
+    Lunch: r.lunch ? LUNCH[r.lunch as keyof typeof LUNCH] : '',
     'Coming From': r.location ?? '',
     Source: r.source ?? (r.registrationType === 'walk_in' ? 'Walk-in' : ''),
     'Registration Type': r.registrationType === 'walk_in' ? 'Walk-in' : 'Existing',
@@ -194,7 +232,7 @@ adminRouter.get('/export', async (req, res) => {
   }));
 
   const sheet = XLSX.utils.json_to_sheet(data, {
-    header: ['Name', 'Phone', 'Parent Phone', 'School/College', 'Class', 'Coming From', 'Source', 'Registration Type', 'Status', 'Room', 'Team', 'Seat', 'Check-in Time'],
+    header: ['Name', 'Phone', 'Parent Name', 'Parent Phone', 'School/College', 'Class', 'Stream', 'Lunch', 'Coming From', 'Source', 'Registration Type', 'Status', 'Room', 'Team', 'Seat', 'Check-in Time'],
   });
   const part = req.query.filter === 'pending' ? '-not-arrived' : '';
   const safeName = `${event.name}-${event.date}${part}`.replace(/[^\w-]+/g, '_');
@@ -204,7 +242,7 @@ adminRouter.get('/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}.csv"`);
     res.send('﻿' + XLSX.utils.sheet_to_csv(sheet));
   } else {
-    sheet['!cols'] = [24, 13, 13, 28, 8, 20, 14, 16, 12, 12, 10, 7, 13].map((wch) => ({ wch }));
+    sheet['!cols'] = [24, 13, 20, 13, 28, 16, 18, 9, 20, 14, 16, 12, 12, 10, 7, 13].map((wch) => ({ wch }));
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, 'Participants');
     const buffer = XLSX.write(book, { type: 'buffer', bookType: 'xlsx' });

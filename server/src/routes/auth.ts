@@ -5,12 +5,13 @@ import { AppError } from '../lib/errors.js';
 import {
   adminOf, createToken, ensureSuperAdmin, hashPassword, requireSignedIn, validatePasswordStrength, verifyPassword,
 } from '../lib/auth.js';
-import { clientIp, rateLimiter } from '../lib/rateLimit.js';
+import { clientIp, sharedRateLimiter } from '../lib/rateLimit.js';
 
 export const authRouter = Router();
 
-const loginLimit = rateLimiter('sign-in', 10, 10 * 60 * 1000);
-const signupLimit = rateLimiter('sign-up', 5, 60 * 60 * 1000);
+// Shared by every server instance, so the limits hold on serverless too (ARCH-ITEM-3.3).
+const loginLimit = sharedRateLimiter('sign-in', 10, 10 * 60 * 1000);
+const signupLimit = sharedRateLimiter('sign-up', 5, 60 * 60 * 1000);
 
 const email = z.string().trim().toLowerCase().email('Please enter a valid email address').max(200);
 
@@ -31,11 +32,11 @@ async function profile(adminId: number) {
 
 authRouter.post('/login', async (req, res) => {
   const v = z.object({ email, password: z.string().min(1, 'Password is required').max(200) }).parse(req.body);
-  loginLimit(`${clientIp(req)}:${v.email}`);
+  await loginLimit(`${clientIp(req)}:${v.email}`);
   await ensureSuperAdmin();
 
   const { rows: [admin] } = await pool.query(
-    'SELECT id, password_hash, status FROM admin_users WHERE email = $1',
+    'SELECT id, password_hash, status, token_version FROM admin_users WHERE email = $1',
     [v.email],
   );
   // Same message whether the email or the password is wrong.
@@ -50,7 +51,7 @@ authRouter.post('/login', async (req, res) => {
   }
   await pool.query('UPDATE admin_users SET last_login_at = now() WHERE id = $1', [admin.id]);
   const me = await profile(admin.id);
-  res.json({ token: createToken(admin.id), email: me.email, user: me });
+  res.json({ token: createToken(admin.id, admin.token_version), email: me.email, user: me });
 });
 
 /** Request admin access. The account stays pending until the super admin approves it and assigns locations. */
@@ -62,7 +63,7 @@ authRouter.post('/signup', async (req, res) => {
     locationId: z.coerce.number().int().positive('Choose the location you will manage'),
     note: z.string().trim().max(500).optional(),
   }).parse(req.body);
-  signupLimit(clientIp(req));
+  await signupLimit(clientIp(req));
   const weak = validatePasswordStrength(v.password);
   if (weak) throw new AppError(400, 'WEAK_PASSWORD', weak);
 
@@ -86,7 +87,7 @@ authRouter.get('/me', requireSignedIn, async (req, res) => {
 authRouter.post('/change-password', requireSignedIn, async (req, res) => {
   const v = z.object({ currentPassword: z.string().min(1, 'Enter your current password'), newPassword: z.string().max(200) }).parse(req.body);
   const user = adminOf(req);
-  loginLimit(`${clientIp(req)}:${user.email}`);
+  await loginLimit(`${clientIp(req)}:${user.email}`);
   const { rows: [admin] } = await pool.query('SELECT password_hash FROM admin_users WHERE id = $1', [user.id]);
   if (!(await verifyPassword(v.currentPassword, admin.password_hash))) {
     throw new AppError(400, 'INVALID_CREDENTIALS', 'Your current password is incorrect.');
@@ -94,13 +95,21 @@ authRouter.post('/change-password', requireSignedIn, async (req, res) => {
   const weak = validatePasswordStrength(v.newPassword);
   if (weak) throw new AppError(400, 'WEAK_PASSWORD', weak);
   if (v.newPassword === v.currentPassword) throw new AppError(400, 'WEAK_PASSWORD', 'Choose a password different from the current one.');
-  await pool.query(
-    'UPDATE admin_users SET password_hash = $2, must_change_password = false WHERE id = $1',
+  // A new password signs out every other device; this one gets a fresh token.
+  const { rows: [updated] } = await pool.query(
+    `UPDATE admin_users SET password_hash = $2, must_change_password = false, token_version = token_version + 1
+     WHERE id = $1 RETURNING token_version`,
     [user.id, await hashPassword(v.newPassword)],
   );
-  res.json({ ok: true, user: await profile(user.id) });
+  res.json({ ok: true, token: createToken(user.id, updated.token_version), user: await profile(user.id) });
 });
 
 authRouter.post('/logout', (_req, res) => {
+  res.json({ ok: true });
+});
+
+/** Signs this admin out on every device (a lost gate laptop, a shared phone). */
+authRouter.post('/logout-all', requireSignedIn, async (req, res) => {
+  await pool.query('UPDATE admin_users SET token_version = token_version + 1 WHERE id = $1', [adminOf(req).id]);
   res.json({ ok: true });
 });

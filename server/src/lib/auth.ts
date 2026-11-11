@@ -64,6 +64,11 @@ export async function ensureSuperAdmin(): Promise<void> {
   const { rows: [existing] } = await pool.query(`SELECT 1 FROM admin_users WHERE role = 'super_admin' LIMIT 1`);
   if (existing) return;
   const seed = superAdminSeed();
+  // In production the first super admin must come from the environment, never the documented default
+  // (ARCH-ITEM-3.5): until someone signed in, anyone who read the README could.
+  if (seed.isDefaultPassword && (process.env.VERCEL || process.env.NODE_ENV === 'production')) {
+    throw new AppError(503, 'SETUP_REQUIRED', 'The platform is not set up yet: set SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD on the server.');
+  }
   await pool.query(
     `INSERT INTO admin_users (email, name, password_hash, role, status, must_change_password, decided_at, decided_by)
      VALUES ($1, 'Super Admin', $2, 'super_admin', 'approved', $3, now(), 'system')
@@ -76,12 +81,39 @@ export async function ensureSuperAdmin(): Promise<void> {
 
 const sign = (payload: string) => crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
 
-export function createToken(adminId: number): string {
-  const payload = Buffer.from(JSON.stringify({ sub: adminId, exp: Date.now() + TOKEN_TTL_MS })).toString('base64url');
+/**
+ * A short-lived pass for one event registration, handed out by the student name search so a student can
+ * check in without knowing the number that registered them. The number itself never leaves the server.
+ */
+const CLAIM_TTL_MS = 12 * 60 * 60 * 1000;
+export function signClaim(eventParticipantId: number, eventId: number): string {
+  const payload = Buffer.from(JSON.stringify({ ep: eventParticipantId, ev: eventId, exp: Date.now() + CLAIM_TTL_MS })).toString('base64url');
+  return `${payload}.${sign(`claim:${payload}`)}`;
+}
+
+/** The registration a claim pass stands for, if the pass is genuine, unexpired and for this event. */
+export function verifyClaim(ref: string, eventId: number): number | null {
+  const [payload, signature] = String(ref).split('.');
+  if (!payload || !signature) return null;
+  const a = Buffer.from(signature);
+  const b = Buffer.from(sign(`claim:${payload}`));
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'));
+    if (!Number.isInteger(data.ep) || data.ev !== eventId || !data.exp || Date.now() > data.exp) return null;
+    return data.ep;
+  } catch {
+    return null;
+  }
+}
+
+/** `version` is the account's token_version: bumping it signs the admin out everywhere (ARCH-ITEM-3.2). */
+export function createToken(adminId: number, version = 1): string {
+  const payload = Buffer.from(JSON.stringify({ sub: adminId, v: version, exp: Date.now() + TOKEN_TTL_MS })).toString('base64url');
   return `${payload}.${sign(payload)}`;
 }
 
-export function verifyToken(token: string): { adminId: number } | null {
+export function verifyToken(token: string): { adminId: number; version: number } | null {
   if (!token || typeof token !== 'string') return null;
   const [payload, signature] = token.split('.');
   if (!payload || !signature) return null;
@@ -91,7 +123,7 @@ export function verifyToken(token: string): { adminId: number } | null {
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'));
     if (!Number.isInteger(data.sub) || !data.exp || Date.now() > data.exp) return null;
-    return { adminId: data.sub };
+    return { adminId: data.sub, version: Number.isInteger(data.v) ? data.v : 1 };
   } catch {
     return null;
   }
@@ -99,9 +131,9 @@ export function verifyToken(token: string): { adminId: number } | null {
 
 // ---- Loading the signed-in admin ----
 
-export async function loadAdmin(adminId: number): Promise<(AdminUser & { status: string }) | null> {
+export async function loadAdmin(adminId: number): Promise<(AdminUser & { status: string; tokenVersion: number }) | null> {
   const { rows: [row] } = await pool.query(
-    `SELECT a.id, a.email, a.name, a.role, a.status, a.must_change_password AS "mustChangePassword",
+    `SELECT a.id, a.email, a.name, a.role, a.status, a.must_change_password AS "mustChangePassword", a.token_version AS "tokenVersion",
        COALESCE(array_agg(al.location_id ORDER BY al.location_id) FILTER (WHERE al.location_id IS NOT NULL), '{}') AS "locationIds"
      FROM admin_users a LEFT JOIN admin_locations al ON al.admin_id = a.id
      WHERE a.id = $1 GROUP BY a.id`,
@@ -129,10 +161,14 @@ async function authenticate(req: Request, allowPendingPasswordChange: boolean) {
   if (!admin || admin.status !== 'approved') {
     throw new AppError(401, 'ACCOUNT_DISABLED', 'This admin account is not active. Contact the super admin.');
   }
+  // Issued before a password change or "sign out everywhere".
+  if (verified.version !== admin.tokenVersion) {
+    throw new AppError(401, 'TOKEN_EXPIRED', 'You were signed out. Please sign in again.');
+  }
   if (admin.mustChangePassword && !allowPendingPasswordChange) {
     throw new AppError(403, 'PASSWORD_CHANGE_REQUIRED', 'Please set a new password before continuing.');
   }
-  const { status: _status, ...user } = admin;
+  const { status: _status, tokenVersion: _version, ...user } = admin;
   (req as AuthenticatedRequest).adminUser = user;
 }
 

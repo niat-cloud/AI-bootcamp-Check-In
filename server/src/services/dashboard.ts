@@ -26,7 +26,7 @@ interface DashboardEvent {
 /** Everything the event dashboard shows, computed from the event's own rows. */
 export async function getDashboard<E extends DashboardEvent>(event: E) {
   const id = event.id;
-  const [counts, rooms, teams, seats, recentActivity, firstCheckIns, waiting, arrivals, sources, areas, schools] =
+  const [counts, rooms, teams, seats, recentActivity, firstCheckIns, waiting, arrivals, sources, areas, schools, answers] =
     await Promise.all([
       pool.query(
         `SELECT
@@ -82,6 +82,7 @@ export async function getDashboard<E extends DashboardEvent>(event: E) {
       sourceFunnel(id),
       breakdown(id, 'p.location'),
       breakdown(id, 'p.school_college'),
+      answerCounts(id),
     ]);
 
   const c = counts.rows[0];
@@ -119,7 +120,35 @@ export async function getDashboard<E extends DashboardEvent>(event: E) {
     sources,
     areas,
     schools,
+    answers,
   };
+}
+
+/**
+ * The check-in answers of everyone who has arrived: lunch counts for the kitchen, and class and stream
+ * counts. "notAnswered" is anyone seated without answering (seated at the gate, or before these questions).
+ */
+async function answerCounts(eventId: number) {
+  const { rows } = await pool.query(
+    `SELECT 'lunch' AS q, lunch AS v, COUNT(*)::int AS n FROM event_participants ep
+       WHERE event_id = $1 AND ${ARRIVED} GROUP BY lunch
+     UNION ALL
+     SELECT 'grade', grade, COUNT(*)::int FROM event_participants ep
+       WHERE event_id = $1 AND ${ARRIVED} GROUP BY grade
+     UNION ALL
+     SELECT 'stream', stream, COUNT(*)::int FROM event_participants ep
+       WHERE event_id = $1 AND ${ARRIVED} AND grade IN ('class_11', 'class_12', 'passed_12') GROUP BY stream`,
+    [eventId],
+  );
+  const pick = (q: string) => {
+    const counts: Record<string, number> = {};
+    let notAnswered = 0;
+    for (const r of rows.filter((r) => r.q === q)) {
+      if (r.v) counts[r.v] = r.n; else notAnswered += r.n;
+    }
+    return { counts, notAnswered };
+  };
+  return { lunch: pick('lunch'), grade: pick('grade'), stream: pick('stream') };
 }
 
 /** Seated students, newest or earliest first. */

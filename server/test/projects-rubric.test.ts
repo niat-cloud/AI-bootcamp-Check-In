@@ -42,6 +42,7 @@ describe('Input Validation Schemas', () => {
     const valid = {
       memberId: 42,
       phone: '9876543210',
+      teamName: 'Byte Busters',
       projectName: 'StudyBud',
       theme: 'Student Life Problem Solver',
       problemStatement: 'Students struggle to find study groups and share notes effectively.',

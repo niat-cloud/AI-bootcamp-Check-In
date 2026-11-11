@@ -146,6 +146,11 @@ body {
   }
   .confetti-piece { display: none; }
 }
+/* Progress indicators keep turning (slowly) under reduced motion, or a stopped spinner looks like a hang. */
+@media (prefers-reduced-motion: reduce) {
+  .spin, .animate-spin, .checkin-seeker::before { animation-duration: 1.6s !important; }
+  .loading-dot { animation-duration: 1.4s !important; }
+}
 
 /* ---------- Mobile + celebration layer ---------- */
 .pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
@@ -170,8 +175,7 @@ body {
     radial-gradient(40% 35% at 25% 30%, rgb(167 25 30 / 0.20), transparent 70%),
     radial-gradient(35% 30% at 75% 35%, rgb(255 183 25 / 0.28), transparent 70%),
     radial-gradient(45% 40% at 50% 80%, rgb(255 214 90 / 0.22), transparent 70%);
-  filter: blur(30px);
-  animation: aurora-in 900ms ease-out both, aurora-drift 9s ease-in-out 900ms infinite;
+  animation: aurora-in 900ms ease-out both, aurora-drift 9s ease-in-out 900ms 1;
 }
 
 /* Soft light rays rotating behind the seat number. */
@@ -255,13 +259,13 @@ body {
 .reel::after { bottom: 0; background: linear-gradient(rgb(255 249 238 / 0), #FFF9EE); }
 .reel-strip { will-change: transform; }
 .reel-item { height: var(--h); display: grid; place-items: center; }
-.reel-spinning .reel-strip { filter: blur(1.4px); }
-.reel-locked { animation: reel-lock 700ms cubic-bezier(0.2, 0.9, 0.25, 1.25) both; }
-@keyframes reel-lock {
-  0% { transform: scale(1); box-shadow: inset 0 2px 8px rgb(25 25 25 / 0.06), 0 0 0 1px var(--color-niat-line), 0 0 0 0 rgb(255 183 25 / 0.6); }
-  35% { transform: scale(1.08); box-shadow: inset 0 2px 8px rgb(25 25 25 / 0.06), 0 0 0 2px var(--color-niat-gold), 0 0 0 12px rgb(255 183 25 / 0.28); }
-  100% { transform: scale(1); box-shadow: inset 0 2px 8px rgb(25 25 25 / 0.06), 0 0 0 2px var(--color-niat-gold), 0 0 0 22px rgb(255 183 25 / 0); }
-}
+/* Motion blur without a filter: while spinning, a faint second copy runs half a row behind. */
+.reel-ghost { position: absolute; inset: 0; opacity: 0.35; margin-top: calc(var(--h) * 0.5); }
+/* Landing: the reel pops once and keeps a gold edge; a ring grows out of it. Transform and opacity only. */
+.reel-locked > .reel { animation: reel-pop 700ms cubic-bezier(0.2, 0.9, 0.25, 1.25) both; box-shadow: inset 0 2px 8px rgb(25 25 25 / 0.06), 0 0 0 2px var(--color-niat-gold); }
+@keyframes reel-pop { 0%, 100% { transform: scale(1); } 35% { transform: scale(1.08); } }
+.reel-ring { position: absolute; inset: -3px; border-radius: 25px; border: 3px solid rgb(255 183 25 / 0.55); pointer-events: none; animation: reel-ring 700ms ease-out both; }
+@keyframes reel-ring { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.22); opacity: 0; } }
 @media (min-width: 640px) { .reel { --h: 120px; } }
 
 /* A burst of warm light from the reels the moment the draw completes. */
@@ -276,9 +280,121 @@ body {
 .seat-chip { animation: chip-pop 460ms cubic-bezier(0.2, 0.9, 0.25, 1.3) both; animation-delay: calc(var(--i, 0) * 80ms + 150ms); }
 @keyframes chip-pop { from { opacity: 0; transform: scale(0.5); } to { opacity: 1; transform: none; } }
 
+/* The chit: a paper slip that jumps out of the bowl folded, wiggles, then opens up. */
+.chit {
+  border-radius: 18px;
+  background: linear-gradient(180deg, #FFFDF5 0%, #FFF6DC 100%);
+  box-shadow: 0 1px 0 #fff inset, 0 0 0 1px #EBDDB0, 0 22px 40px -18px rgb(134 19 23 / 0.45);
+  transform: rotate(-1.2deg);
+}
+.chit::after { /* the fold crease, fading as it opens */
+  content: ""; position: absolute; left: 6%; right: 6%; top: 50%; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(167 25 30 / 0.18), transparent);
+}
+/* Out of the bowl as a small folded slip (tipped away, flat), a little tumble, then it flips open
+   towards the student like paper being unfolded, with a soft settle. */
+.chit-draw { animation: chit-draw 1500ms cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: 50% 55%; backface-visibility: hidden; }
+@keyframes chit-draw {
+  0%   { opacity: 1; transform: perspective(700px) translateY(95px) rotateX(78deg) scale(0.46) rotate(-10deg); }
+  22%  { transform: perspective(700px) translateY(-26px) rotateX(70deg) scale(0.5) rotate(9deg); }
+  38%  { transform: perspective(700px) translateY(-10px) rotateX(72deg) scale(0.5) rotate(-6deg); }
+  56%  { transform: perspective(700px) translateY(-14px) rotateX(64deg) scale(0.56) rotate(3deg); }
+  78%  { transform: perspective(700px) translateY(4px) rotateX(-9deg) scale(1.03) rotate(-2deg); }
+  90%  { transform: perspective(700px) translateY(-1px) rotateX(3deg) scale(0.995) rotate(-1deg); }
+  100% { opacity: 1; transform: perspective(700px) translateY(0) rotateX(0) scale(1) rotate(-1.2deg); }
+}
+/* Slips in the bowl jostle while it shakes. */
+.bowl-slip { transform-box: fill-box; transform-origin: center; animation: slip-bob 260ms ease-in-out 6 alternate; }
+@keyframes slip-bob { from { transform: translateY(0) rotate(0); } to { transform: translateY(-5px) rotate(6deg); } }
+
+/* The code stamped onto the chit: drops in big, lands with a thud, a little ink spread. */
+.code-stamp { animation: code-stamp 520ms cubic-bezier(0.3, 1.4, 0.5, 1) 250ms both; }
+@keyframes code-stamp {
+  0% { opacity: 0; transform: scale(2.6) rotate(-14deg); }
+  55% { opacity: 1; transform: scale(0.92) rotate(-5deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+}
+/* The chit jolts once as the stamp lands. */
+.chit-impact { animation: chit-impact 380ms ease-out 330ms both; }
+@keyframes chit-impact {
+  0%, 100% { transform: rotate(-1.2deg); } 25% { transform: translateY(3px) rotate(-1.6deg) scale(0.99); }
+  55% { transform: translateY(-1px) rotate(-0.9deg); } 80% { transform: translateY(1px) rotate(-1.3deg); }
+}
+/* The draw headline rises into place when it changes. */
+.headline-swap { animation: headline-swap 380ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes headline-swap { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Confetti cannons: x on the outer layer (eases out), up-then-down on the middle layer (gravity),
+   spin and flutter on the piece. */
+.cannon-x { position: absolute; bottom: -12px; animation: cannon-x var(--dur) cubic-bezier(0.1, 0.7, 0.3, 1) var(--delay) both; }
+.cannon-y { display: block; animation: cannon-y var(--dur) linear var(--delay) both; }
+.cannon-piece { display: block; width: 9px; height: 12px; border-radius: 2px;
+  animation: cannon-spin var(--dur) linear var(--delay) both, cannon-flip var(--flip) linear var(--delay) infinite; }
+.cannon-noflip { animation: cannon-spin var(--dur) linear var(--delay) both; }
+.cannon-strip { width: 5px; height: 16px; }
+.cannon-dot { width: 8px; height: 8px; border-radius: 9999px; }
+@keyframes cannon-x { from { transform: translateX(0); } to { transform: translateX(var(--dx)); } }
+@keyframes cannon-y {
+  0% { transform: translateY(0); animation-timing-function: cubic-bezier(0.2, 0.6, 0.35, 1); }
+  38% { transform: translateY(var(--up)); animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.6); }
+  100% { transform: translateY(calc(var(--up) + var(--down) + 260px)); }
+}
+@keyframes cannon-spin { 0% { opacity: 1; rotate: 0deg; } 85% { opacity: 1; } 100% { opacity: 0; rotate: var(--rot); } }
+@keyframes cannon-flip { from { transform: rotateX(0) rotateY(0); } 50% { transform: rotateX(180deg) rotateY(60deg); } to { transform: rotateX(360deg) rotateY(0); } }
+.bowl { animation: bowl-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both, bowl-shake 420ms ease-in-out 300ms 1; transform-origin: 50% 80%; }
+@keyframes bowl-shake {
+  0%, 100% { transform: rotate(0); } 20% { transform: rotate(-5deg) translateX(-4px); } 45% { transform: rotate(4deg) translateX(4px); }
+  70% { transform: rotate(-3deg) translateX(-2px); } 85% { transform: rotate(2deg); }
+}
+.bowl-leave { animation: bowl-out 320ms ease-in both; }
+@keyframes bowl-in { from { opacity: 0; transform: translateY(30px) scale(0.9); } to { opacity: 1; transform: none; } }
+@keyframes bowl-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(110px) scale(0.9); } }
+
+/* One sweep of gold light across the chit when the code lands, like a lucky ticket. */
+.chit { overflow: hidden; }
+.chit-shine::before {
+  content: ""; position: absolute; inset: -20% -60%; z-index: 3; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgb(255 236 170 / 0.85) 50%, transparent 60%);
+  transform: translateX(-70%); animation: chit-shine 1100ms cubic-bezier(0.45, 0, 0.25, 1) 250ms both;
+}
+@keyframes chit-shine { to { transform: translateX(70%); } }
+
+/* A warm gold halo that slowly breathes behind the landed chit. */
+.chit-halo {
+  position: absolute; left: 50%; top: 50%; width: 120%; height: 150%; z-index: -1; pointer-events: none;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side, rgb(255 205 80 / 0.55), rgb(255 183 25 / 0.18) 55%, transparent 78%);
+  animation: halo-breathe 3.6s ease-in-out infinite;
+}
+@keyframes halo-breathe { 0%, 100% { opacity: 0.65; transform: translate(-50%, -50%) scale(0.94); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); } }
+
+/* Tiny gold sparks drifting up around the chit. */
+.spark-float {
+  position: absolute; bottom: 8%; z-index: -1; border-radius: 9999px; pointer-events: none;
+  background: radial-gradient(circle, #FFF3C4, #FFB719 60%, transparent 70%);
+  box-shadow: 0 0 8px 2px rgb(255 183 25 / 0.5);
+  animation-name: spark-rise; animation-timing-function: ease-in-out; animation-iteration-count: infinite;
+}
+@keyframes spark-rise { 0% { opacity: 0; transform: translateY(0) scale(0.6); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(-180px) scale(1); } }
+
+/* The step to do now gently pulses, inviting a tap; the finish banner pops in. */
+.walk-now::after { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 2px solid rgb(167 25 30 / 0.5); pointer-events: none; opacity: 0; animation: walk-ring 2.2s ease-out 1.2s 3; }
+@keyframes walk-ring { 0% { transform: scale(1); opacity: 0.9; } 55%, 100% { transform: scale(1.05, 1.18); opacity: 0; } }
+.walk-done { animation: chip-pop 460ms cubic-bezier(0.2, 0.9, 0.25, 1.3) both; }
+
+/* Walking directions appear one step at a time once the chit lands. */
+.walk-step { animation: walk-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 120ms); }
+@keyframes walk-in { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+
 @media (prefers-reduced-motion: reduce) {
-  .reel-locked, .win-flash, .seat-chip { animation: none !important; }
-  .reel-spinning .reel-strip { filter: none; }
+  .chit-draw, .bowl, .bowl-leave, .walk-step, .bowl-slip, .chit-impact, .code-stamp, .headline-swap { animation: none !important; }
+  .cannon-x { display: none; }
+  .chit-shine::before { display: none; }
+  .chit-halo, .spark-float, .walk-now::after, .walk-done { animation: none !important; }
+  .spark-float { display: none; }
+  .bowl-leave { display: none; }
+  .reel-locked > .reel, .reel-ring, .win-flash, .seat-chip { animation: none !important; }
+  .reel-ghost { display: none; }
 }
 
 /* ======================================================================
@@ -348,10 +464,9 @@ body {
 
 /* Mobile number field. */
 .checkin-field {
-  display: flex; align-items: stretch; border-radius: 18px; background: rgb(255 255 255 / 0.82);
+  display: flex; align-items: stretch; border-radius: 18px; background: rgb(255 255 255 / 0.92);
   border: 1.5px solid var(--checkin-line); box-shadow: 0 1px 2px rgb(41 45 51 / 0.04), inset 0 1px 0 #fff;
   transition: border-color 200ms ease, box-shadow 250ms ease, background-color 200ms ease;
-  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
 }
 .checkin-field:focus-within { border-color: var(--checkin-maroon); background: #fff; box-shadow: 0 0 0 5px rgb(165 9 37 / 0.09), 0 10px 26px -14px rgb(165 9 37 / 0.45); }
 .checkin-field[data-invalid="true"] { border-color: rgb(165 9 37 / 0.75); }
@@ -368,22 +483,23 @@ body {
   transition: transform 160ms ease, box-shadow 220ms ease, filter 200ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-.checkin-cta:hover { filter: brightness(1.05); box-shadow: 0 18px 36px -12px rgb(165 9 37 / 0.68), inset 0 1px 0 rgb(255 255 255 / 0.22); }
+@media (hover: hover) { .checkin-cta:hover { filter: brightness(1.05); box-shadow: 0 18px 36px -12px rgb(165 9 37 / 0.68), inset 0 1px 0 rgb(255 255 255 / 0.22); } }
 .checkin-cta:active { transform: scale(0.98); }
 .checkin-cta:focus-visible { outline: none; box-shadow: 0 0 0 4px var(--checkin-ivory), 0 0 0 7px rgb(165 9 37 / 0.45); }
 .checkin-cta:disabled { cursor: progress; }
 .checkin-cta .checkin-arrow { transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1); }
-.checkin-cta:hover .checkin-arrow, .checkin-cta:active .checkin-arrow { transform: translateX(4px); }
+.checkin-cta:active .checkin-arrow { transform: translateX(4px); }
+@media (hover: hover) { .checkin-cta:hover .checkin-arrow { transform: translateX(4px); } }
 .checkin-ghost {
   display: inline-flex; width: 100%; min-height: 52px; align-items: center; justify-content: center; border-radius: 9999px;
   font-weight: 700; color: var(--checkin-maroon); background: rgb(255 255 255 / 0.7); border: 1.5px solid rgb(165 9 37 / 0.22);
   cursor: pointer; transition: background-color 200ms ease, border-color 200ms ease, transform 160ms ease;
 }
-.checkin-ghost:hover { background: #fff; border-color: rgb(165 9 37 / 0.45); }
+@media (hover: hover) { .checkin-ghost:hover { background: #fff; border-color: rgb(165 9 37 / 0.45); } }
 .checkin-ghost:active { transform: scale(0.98); }
 .checkin-ghost:focus-visible { outline: 2px solid var(--checkin-maroon); outline-offset: 3px; }
 .checkin-link { font-weight: 700; color: var(--checkin-maroon); border-radius: 8px; cursor: pointer; text-underline-offset: 4px; }
-.checkin-link:hover { text-decoration: underline; }
+@media (hover: hover) { .checkin-link:hover { text-decoration: underline; } }
 .checkin-link:focus-visible { outline: 2px solid var(--checkin-maroon); outline-offset: 3px; }
 
 /* Glass surface for forms and messages. */
@@ -417,3 +533,20 @@ body {
   .checkin-wordmark { animation: none !important; background-position: 0 0; }
   .checkin-enter { opacity: 1; transform: none; }
 }
+
+/* One shake for the field that failed, once it has been scrolled into view. */
+.checkin-shake { animation: checkin-shake 360ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+@keyframes checkin-shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-6px); } 40%, 60% { transform: translateX(6px); } }
+@media (prefers-reduced-motion: reduce) { .checkin-shake { animation: none; } }
+
+/* QR scanner: a soft line sweeping the viewfinder. */
+.qr-scan-line { top: 12%; animation: qr-scan 2.2s ease-in-out infinite alternate; }
+@keyframes qr-scan { from { top: 12%; } to { top: 88%; } }
+@media (prefers-reduced-motion: reduce) { .qr-scan-line { animation: none; top: 50%; } }
+
+/* A friendly wave on the 'number not found' screen: twice, then still. */
+.checkin-wave { animation: checkin-wave 1.6s ease-in-out 500ms 1 both; transform-origin: 70% 70%; }
+@keyframes checkin-wave {
+  0%, 60%, 100% { transform: rotate(0); } 10%, 30% { transform: rotate(14deg); } 20%, 40% { transform: rotate(-8deg); } 50% { transform: rotate(10deg); }
+}
+@media (prefers-reduced-motion: reduce) { .checkin-wave { animation: none; } }

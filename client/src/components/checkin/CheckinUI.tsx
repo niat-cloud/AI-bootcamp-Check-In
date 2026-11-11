@@ -48,13 +48,13 @@ function HelpLink() {
   const id = useId();
   return (
     <>
-      <button type="button" className="checkin-link mt-2 text-xs" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+      <button type="button" className="checkin-link text-xs" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
         Need help?
       </button>
       {open && (
-        <p id={id} className="mx-auto mt-1.5 max-w-xs text-xs leading-relaxed text-[var(--checkin-muted)]">
+        <span id={id} className="mx-auto mt-1.5 block max-w-xs text-xs leading-relaxed text-[var(--checkin-muted)]">
           Find an organizer at the help desk near the entrance and show them this screen.
-        </p>
+        </span>
       )}
     </>
   );
@@ -75,19 +75,12 @@ export function CheckinShell({ children, footer = 'entry' }: {
         {children}
       </main>
       {footer !== 'none' && (
-        <footer className="mx-auto w-full max-w-[430px] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-6 text-center">
-          <div aria-hidden className="mx-auto mb-4 h-px w-24 bg-gradient-to-r from-transparent via-[var(--checkin-rose)] to-transparent opacity-70" />
-          {footer === 'entry' ? (
-            <>
-              <p className="text-xs font-bold text-[var(--checkin-ink)]">Official NIAT Event Experience</p>
-              <p className="mt-1 text-xs text-[var(--checkin-muted)]">Your mobile number is used to locate your event registration.</p>
-            </>
-          ) : (
-            <>
-              <p className="text-xs font-bold text-[var(--checkin-ink)]">Powered by NIAT</p>
-              <HelpLink />
-            </>
-          )}
+        <footer className="mx-auto w-full max-w-[430px] px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 text-center">
+          <p className="text-xs text-[var(--checkin-muted)]">
+            <span className="font-bold text-[var(--checkin-ink)]">Powered by NIAT</span>
+            <span aria-hidden className="mx-2">·</span>
+            <HelpLink />
+          </p>
         </footer>
       )}
     </div>
@@ -97,7 +90,7 @@ export function CheckinShell({ children, footer = 'entry' }: {
 /** Pin + date row under the hero, as in the brand reference. */
 export function EventMeta({ place, date }: { place: string; date: string }) {
   return (
-    <div className="inline-flex items-center gap-3 rounded-full bg-white/60 px-4 py-2 text-sm font-bold text-[var(--checkin-ink)] ring-1 ring-[var(--checkin-line)] backdrop-blur">
+    <div className="inline-flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-full bg-white/60 px-4 py-2 text-sm font-bold text-[var(--checkin-ink)] ring-1 ring-[var(--checkin-line)] backdrop-blur">
       <span className="inline-flex items-center gap-1.5">
         <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 text-[var(--checkin-maroon)]" fill="currentColor">
           <path d="M12 2a7 7 0 00-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z" />
@@ -142,13 +135,76 @@ export const CheckinButton = forwardRef<HTMLButtonElement, ButtonProps>(function
   );
 });
 
+/**
+ * A form row of tap boxes, like tick-boxes on a paper form: label on top, short choices side by side
+ * (four choices go two by two so the words fit a phone), small local names under each.
+ */
+export function CheckinChoice<T extends string>({ label, value, options, onPick, error, name }: {
+  label: string;
+  name?: string;
+  value: T | '' | null;
+  options: { value: T; label: string; sub?: string; icon?: string }[];
+  onPick: (value: T) => void;
+  error?: string;
+}) {
+  const id = useId();
+  return (
+    <div className="text-left" data-field={name}>
+      <div id={id} className="mb-1.5 pl-1 text-[13px] font-bold text-[var(--checkin-ink)]">{label}</div>
+      <div role="radiogroup" aria-labelledby={id} className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length > 3 ? 2 : options.length}, minmax(0, 1fr))` }}>
+        {options.map((o) => {
+          const on = value === o.value;
+          return (
+            <button key={o.value} type="button" role="radio" aria-checked={on} onClick={() => onPick(o.value)}
+              className={`flex min-h-14 flex-col items-center justify-center rounded-2xl px-1 py-2 text-center transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgb(165_9_37/0.25)] ${
+                on ? 'bg-[var(--checkin-maroon)] text-white shadow-md' : `bg-white/90 ring-1 ${error ? 'ring-[var(--checkin-maroon)]' : 'ring-[var(--checkin-line)]'}`}`}>
+              <span className="text-[15.5px] font-extrabold leading-tight">{o.icon && <span aria-hidden className="mr-1">{o.icon}</span>}{o.label}</span>
+              {o.sub && <span className={`mt-0.5 whitespace-pre-line text-[11px] font-semibold leading-tight ${on ? 'text-white/80' : 'text-[var(--checkin-muted)]'}`}>{o.sub}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {error && <p className="mt-1.5 pl-1 text-[13px] font-semibold text-[var(--checkin-maroon)]">{error}</p>}
+    </div>
+  );
+}
+
+/** A dropdown in the same style as the text fields; the phone shows its own picker. */
+export function CheckinSelect<T extends string>({ label, value, options, onPick, error, placeholder = 'Select', name }: {
+  label: string;
+  name?: string;
+  value: T | '';
+  options: { value: T; label: string }[];
+  onPick: (value: T) => void;
+  error?: string;
+  placeholder?: string;
+}) {
+  const id = useId();
+  return (
+    <div className="text-left" data-field={name}>
+      <label htmlFor={id} className="mb-1.5 block pl-1 text-[13px] font-bold text-[var(--checkin-ink)]">{label}</label>
+      <div className="checkin-field relative" data-invalid={Boolean(error) || undefined}>
+        <select id={id} value={value} onChange={(e) => onPick(e.target.value as T)} aria-invalid={Boolean(error) || undefined}
+          className={`h-14 cursor-pointer appearance-none pl-4 pr-11 text-[16px] font-semibold ${value ? '' : '!text-[#A39C95]'}`}>
+          <option value="" disabled>{placeholder}</option>
+          {options.map((o) => <option key={o.value} value={o.value} className="text-[var(--checkin-ink)]">{o.label}</option>)}
+        </select>
+        <svg aria-hidden viewBox="0 0 24 24" className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--checkin-maroon)]" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </div>
+      {error && <p className="mt-1.5 pl-1 text-[13px] font-semibold text-[var(--checkin-maroon)]">{error}</p>}
+    </div>
+  );
+}
+
 type FieldProps = React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string; hint?: string; prefix?: string };
 
 /** Labelled input in the check-in style. The label sits above the field so the layout never jumps. */
 export const CheckinField = forwardRef<HTMLInputElement, FieldProps>(function CheckinField({ label, error, hint, prefix, className = '', ...rest }, ref) {
   const id = useId();
   return (
-    <div className={`text-left ${className}`}>
+    <div className={`text-left ${className}`} data-field={rest.name}>
       <label htmlFor={id} className="mb-1.5 block pl-1 text-[13px] font-bold text-[var(--checkin-ink)]">{label}</label>
       <div className="checkin-field" data-invalid={Boolean(error) || undefined}>
         {prefix && (

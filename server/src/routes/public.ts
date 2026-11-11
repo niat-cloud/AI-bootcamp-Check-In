@@ -1,6 +1,8 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { answersInput } from '../lib/answers.js';
+import { signClaim, verifyClaim } from '../lib/auth.js';
 import { AppError } from '../lib/errors.js';
 import { maskPhone } from '../lib/phone.js';
 import { clientIp, rateLimiter } from '../lib/rateLimit.js';
@@ -19,6 +21,22 @@ export const publicRouter = Router();
 const lookupLimit = rateLimiter('lookups', 120, 60 * 1000);
 const checkinLimit = rateLimiter('check-ins', 90, 60 * 1000);
 const submitLimit = rateLimiter('project submissions', 60, 60 * 1000);
+const nameLimit = rateLimiter('name searches', 60, 60 * 1000);
+
+/** The registered phone number behind a name-search pass (it is never sent to the browser). */
+async function phoneFromClaim(ref: string, eventId: number): Promise<string> {
+  const epId = verifyClaim(ref, eventId);
+  const { rows: [row] } = epId
+    ? await pool.query(
+      `SELECT p.phone FROM event_participants ep JOIN participants p ON p.id = ep.participant_id WHERE ep.id = $1 AND ep.event_id = $2`,
+      [epId, eventId])
+    : { rows: [] };
+  if (!row) throw new AppError(400, 'INVALID_CLAIM', 'Please search for your name again.');
+  return row.phone;
+}
+
+/** Escapes LIKE wildcards so typed text matches literally. */
+const likeEscape = (s: string) => s.replace(/[%_\\]/g, '\\$&');
 
 /** Active events, for the home page. */
 publicRouter.get('/live', async (_req, res) => {
@@ -69,14 +87,15 @@ publicRouter.get('/events/:location/:slug', async (req, res) => {
  * seated (show the seat), waiting, registered (confirm details), returning (prefilled form) or new.
  */
 publicRouter.post('/events/:location/:slug/lookup', async (req, res) => {
-  const { phone: raw } = z.object({ phone: z.string().trim().max(20) }).parse(req.body);
+  const { phone: raw, ref } = z.object({ phone: z.string().trim().max(20).optional(), ref: z.string().max(300).optional() }).parse(req.body);
   lookupLimit(clientIp(req));
   const event = await findActiveEvent(req);
-  const phone = requirePhone(raw);
+  const phone = ref ? await phoneFromClaim(ref, event.id) : requirePhone(raw ?? '');
 
   const { rows: [row] } = await pool.query(
-    `SELECT p.name, p.school_college, p.class, p.location, p.parent_phone IS NOT NULL AS has_parent_phone,
-       ep.id AS ep_id, ep.seat_id, ep.status, ep.registration_type
+    `SELECT p.name, p.school_college, p.class, p.location, p.parent_phone IS NOT NULL AS has_parent_phone, p.parent_phone, p.parent_name,
+       ep.id AS ep_id, ep.seat_id, ep.status, ep.registration_type,
+       ep.grade, ep.stream, ep.study_detail, ep.lunch
      FROM participants p LEFT JOIN event_participants ep ON ep.participant_id = p.id AND ep.event_id = $2
      WHERE p.phone = $1`,
     [phone, event.id],
@@ -91,18 +110,53 @@ publicRouter.post('/events/:location/:slug/lookup', async (req, res) => {
     className: row.class,
     location: row.location,
     hasParentPhone: row.has_parent_phone,
+    // Last 4 digits only: enough for the student to recognise it, not enough to read it off.
+    parentPhone: row.parent_phone ? maskPhone(row.parent_phone) : null,
+    parentName: row.parent_name ?? null,
     phone: maskPhone(phone),
+    // Answers already given for this event (a check-in that was interrupted), so they come pre-selected.
+    answers: row.grade ? { grade: row.grade, stream: row.stream, studyDetail: row.study_detail, lunch: row.lunch } : null,
   };
   if (row.status === 'waiting') return res.json({ state: 'waiting', participant });
   res.json({ state: row.ep_id ? 'registered' : 'returning', participant });
 });
 
+/**
+ * "I don't remember the number": a student registered by a parent or sibling finds themselves by name and
+ * recognises their entry by college. Each not-yet-checked-in match carries a pass the page uses in place of
+ * the phone number; the number itself is never sent.
+ */
+publicRouter.post('/events/:location/:slug/find-by-name', async (req, res) => {
+  const { name } = z.object({ name: z.string().trim().max(60) }).parse(req.body);
+  nameLimit(clientIp(req));
+  const event = await findActiveEvent(req);
+  const words = name.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 4);
+  if (name.replace(/\s/g, '').length < 3) return res.json([]);
+  const { rows } = await pool.query(
+    `SELECT ep.id, p.name, p.school_college, (ep.seat_id IS NOT NULL OR ep.status = 'waiting') AS checked_in
+     FROM event_participants ep JOIN participants p ON p.id = ep.participant_id
+     WHERE ep.event_id = $1 AND ${words.map((_, i) => `lower(p.name) LIKE $${i + 2}`).join(' AND ')}
+     ORDER BY (lower(p.name) LIKE $${words.length + 2}) DESC, p.name
+     LIMIT 8`,
+    [event.id, ...words.map((w) => `%${likeEscape(w)}%`), `${likeEscape(words[0])}%`],
+  );
+  // Someone already checked in can't be picked again, so a name can never be used to take a seat twice.
+  res.json(rows.map((r) => ({
+    name: r.name, schoolCollege: r.school_college, checkedIn: r.checked_in,
+    ref: r.checked_in ? null : signClaim(r.id, event.id),
+  })));
+});
+
 /** Step 2: the student confirms (or fills in) their details and gets a seat. Safe to repeat. */
 publicRouter.post('/events/:location/:slug/checkin', async (req, res) => {
-  const v = detailsInput.parse(req.body);
   checkinLimit(clientIp(req));
   const event = await findActiveEvent(req);
-  res.json(await registerAndSeat(event.id, v));
+  // A student who found themselves by name checks in with their pass in place of the number.
+  const ref = typeof req.body?.ref === 'string' ? req.body.ref : null;
+  const v = detailsInput.parse(ref ? { ...req.body, phone: await phoneFromClaim(ref, event.id) } : req.body);
+  // Class, stream and lunch are asked of every student on this page.
+  const answers = answersInput.parse(req.body?.answers);
+  res.json(await registerAndSeat(event.id, v, { answers }));
 });
 
 // ---- Project submission: the page instructors show on the classroom screen at build time ----

@@ -58,7 +58,7 @@ export function Leaderboard({ projects, data, prefix, onOpen }: {
                   {p.rank ?? '–'}{p.tied && <span title="Same total as another team; the higher Working App score ranks first" className="text-amber-700">*</span>}
                 </td>
                 <td className="px-3 py-2.5">
-                  <div className="font-bold">{prefix} {p.teamNumber} · {p.projectName}</div>
+                  <div className="font-bold">{prefix} {p.teamNumber}{p.teamName ? ` “${p.teamName}”` : ''} · {p.projectName}</div>
                   <div className="text-xs text-niat-muted">{p.theme}</div>
                   {award && <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${award.tone}`}>{award.short}</span>}
                   {p.disqualified && <span className="mt-1 inline-block rounded-full bg-niat-maroon px-2 py-0.5 text-xs font-bold text-white">Disqualified</span>}

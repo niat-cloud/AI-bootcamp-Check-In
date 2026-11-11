@@ -14,6 +14,8 @@ export interface Project {
   roomId: number;
   teamId: number;
   teamNumber: number;
+  /** The name the team gave itself (null for submissions made before the field existed). */
+  teamName: string | null;
   projectName: string;
   theme: string;
   problemStatement: string;
