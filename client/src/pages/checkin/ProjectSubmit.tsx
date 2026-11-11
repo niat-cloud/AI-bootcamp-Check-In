@@ -18,6 +18,7 @@ interface PublicRoom {
 }
 
 interface Submission {
+  teamName: string | null;
   projectName: string;
   theme: string;
   problemStatement: string;
@@ -38,6 +39,7 @@ interface TeamInfo {
 }
 
 interface Form {
+  teamName: string;
   projectName: string;
   theme: string;
   problemStatement: string;
@@ -62,7 +64,9 @@ const rememberTeam = (path: string, teamId: number) => { try { localStorage.setI
 const forgetTeam = (path: string) => { try { localStorage.removeItem(teamKey(path)); } catch { /* storage unavailable */ } };
 
 // The number this phone checked in with (saved by the check-in page), to fill in "Confirm it's you".
-const recallCheckinPhone = (path: string) => { try { return localStorage.getItem(`aibootcamp.phone.${path}`) ?? ''; } catch { return ''; } };
+const recallCheckinPhone = (path: string) => {
+  try { const v = localStorage.getItem(`aibootcamp.phone.${path}`) ?? ''; return v.startsWith('ref:') ? '' : v; } catch { return ''; }
+};
 
 /** 98765 43210, +91 98765 43210, 098765 43210 → 9876543210 (or null). */
 function normalizePhone(raw: string): string | null {
@@ -434,7 +438,8 @@ function SubmissionCard({ submission, title }: { submission: Submission; title: 
           ✓ {submission.isLate ? 'Submitted late' : 'Submitted'}
         </span>
       </div>
-      <p className="mt-3 text-lg font-extrabold leading-snug">{submission.projectName}</p>
+      {submission.teamName && <p className="mt-3 text-sm font-bold text-[var(--checkin-muted)]">Team “{submission.teamName}”</p>}
+      <p className={`${submission.teamName ? 'mt-1' : 'mt-3'} text-lg font-extrabold leading-snug`}>{submission.projectName}</p>
       <p className="mt-0.5 text-sm font-semibold text-[var(--checkin-maroon)]">{submission.theme}</p>
       <p className="mt-2 text-sm leading-relaxed text-[var(--checkin-muted)]">{submission.problemStatement}</p>
       <a href={submission.projectUrl} target="_blank" rel="noopener noreferrer"
@@ -482,7 +487,7 @@ function FormStep({ info, memberId, onBack, onSubmit, onAlreadySubmitted }: {
   onSubmit: (form: Form) => Promise<void>;
   onAlreadySubmitted: () => void;
 }) {
-  const [form, setForm] = useState<Form>({ projectName: '', theme: '', problemStatement: '', projectUrl: '' });
+  const [form, setForm] = useState<Form>({ teamName: '', projectName: '', theme: '', problemStatement: '', projectUrl: '' });
   const [errors, setErrors] = useState<Partial<Record<keyof Form, string>>>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -499,6 +504,7 @@ function FormStep({ info, memberId, onBack, onSubmit, onAlreadySubmitted }: {
   const review = (e: React.FormEvent) => {
     e.preventDefault();
     const found: typeof errors = {};
+    if (form.teamName.trim().length < 2) found.teamName = 'Enter your team’s name.';
     if (form.projectName.trim().length < 2) found.projectName = 'Enter your project’s name.';
     if (!form.theme) found.theme = 'Choose a theme.';
     if (form.problemStatement.trim().length < 15) found.problemStatement = 'Describe the problem in a sentence or two.';
@@ -516,7 +522,7 @@ function FormStep({ info, memberId, onBack, onSubmit, onAlreadySubmitted }: {
     setBusy(true);
     setServerError(null);
     try {
-      await onSubmit({ ...form, projectName: form.projectName.trim(), problemStatement: form.problemStatement.trim(), projectUrl: url });
+      await onSubmit({ ...form, teamName: form.teamName.trim(), projectName: form.projectName.trim(), problemStatement: form.problemStatement.trim(), projectUrl: url });
     } catch (err) {
       const apiErr = err as ApiError;
       setBusy(false);
@@ -535,6 +541,7 @@ function FormStep({ info, memberId, onBack, onSubmit, onAlreadySubmitted }: {
     const rows: [string, string][] = [
       ['Team', `${info.team.name} · ${info.team.room}`],
       ['Submitted by', member?.name ?? ''],
+      ['Team name', form.teamName.trim()],
       ['Project name', form.projectName.trim()],
       ['Theme', form.theme],
       ['Problem', form.problemStatement.trim()],
@@ -594,11 +601,15 @@ function FormStep({ info, memberId, onBack, onSubmit, onAlreadySubmitted }: {
       <Deadline deadline={info.deadline} />
       <OneChance className="mt-4" />
       <form onSubmit={review} noValidate className="checkin-glass checkin-enter mt-4 space-y-5 p-5" style={{ '--i': 1 } as React.CSSProperties}>
-        <CheckinField label="1. Project name" value={form.projectName} maxLength={80} error={errors.projectName}
+        <CheckinField label="1. Team name" value={form.teamName} maxLength={60} error={errors.teamName}
+          placeholder="e.g. Code Crusaders"
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => set('teamName')(e.target.value)} autoCapitalize="words" enterKeyHint="next" />
+
+        <CheckinField label="2. Project name" value={form.projectName} maxLength={80} error={errors.projectName}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => set('projectName')(e.target.value)} autoCapitalize="words" enterKeyHint="next" />
 
         <fieldset className="text-left">
-          <legend className="mb-1.5 block pl-1 text-[13px] font-bold text-[var(--checkin-ink)]">2. Theme</legend>
+          <legend className="mb-1.5 block pl-1 text-[13px] font-bold text-[var(--checkin-ink)]">3. Theme</legend>
           <div className="space-y-2">
             {info.themes.map((theme) => (
               <label key={theme} className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 transition-colors ${form.theme === theme
@@ -612,10 +623,10 @@ function FormStep({ info, memberId, onBack, onSubmit, onAlreadySubmitted }: {
           {errors.theme && <p className="mt-1.5 pl-1 text-[13px] font-semibold text-[var(--checkin-maroon)]">{errors.theme}</p>}
         </fieldset>
 
-        <TextArea label="3. What problem does it solve?" value={form.problemStatement} onChange={set('problemStatement')} maxLength={600}
+        <TextArea label="4. What problem does it solve?" value={form.problemStatement} onChange={set('problemStatement')} maxLength={600}
           error={errors.problemStatement} hint="Who has this problem, and how does your app help them?" />
 
-        <CheckinField label="4. Published project link" type="url" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+        <CheckinField label="5. Published project link" type="url" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false}
           placeholder="your-app.lovable.app" value={form.projectUrl} maxLength={500} error={errors.projectUrl}
           hint="In Lovable, click Publish and copy the link that ends in .lovable.app. Not the editor link."
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => set('projectUrl')(e.target.value)} enterKeyHint="done" />
@@ -640,7 +651,8 @@ function SubmittedHero({ info, title }: { info: TeamInfo; title: string }) {
       <p className="mt-5 text-sm font-extrabold uppercase tracking-[0.2em] text-emerald-100">{title}</p>
       <h1 className="mt-2 text-[clamp(2.75rem,15vw,4rem)] font-black leading-none tracking-tight">{info.team.name}</h1>
       <p className="mt-2 text-xl font-bold text-emerald-50">{info.team.room}</p>
-      {info.submission && <p className="mt-4 break-words text-lg font-extrabold">“{info.submission.projectName}”</p>}
+      {info.submission?.teamName && <p className="mt-4 break-words text-base font-bold text-emerald-50">Team “{info.submission.teamName}”</p>}
+      {info.submission && <p className={`${info.submission.teamName ? 'mt-1' : 'mt-4'} break-words text-lg font-extrabold`}>“{info.submission.projectName}”</p>}
       {info.submission && (
         <p className="mt-1 text-sm font-semibold text-emerald-100">
           at {clock(info.submission.updatedAt)}{info.submission.isLate ? ' · marked late' : ''}

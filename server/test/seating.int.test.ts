@@ -50,11 +50,14 @@ describe.skipIf(!url)('rooms, teams and seat allocation (database)', () => {
     const login = await call(null, 'POST', '/admin/auth/login', { email: seed.email, password: seed.password });
     expect(login.status).toBe(200);
     expect(login.body.user.role).toBe('super_admin');
-    const superToken: string = login.body.token;
+    let superToken: string = login.body.token;
     if (login.body.user.mustChangePassword) {
       expect((await call(superToken, 'GET', '/events')).body.code).toBe('PASSWORD_CHANGE_REQUIRED');
       const changed = await call(superToken, 'POST', '/admin/auth/change-password', { currentPassword: seed.password, newPassword: 'Bootcamp2026' });
       expect(changed.status).toBe(200);
+      // A new password signs out older tokens; the response carries this device's fresh one.
+      expect((await call(superToken, 'GET', '/events')).body.code).toBe('TOKEN_EXPIRED');
+      superToken = changed.body.token;
     }
     request = (method, path, body) => call(superToken, method, path, body);
     // The migration puts all earlier events under Hyderabad.
@@ -120,7 +123,7 @@ describe.skipIf(!url)('rooms, teams and seat allocation (database)', () => {
       expect(r.body.code).toBe('VENUE_FULL');
     }
     const walk = await request('POST', `/events/${event.id}/gate/walk-in`, {
-      name: 'Arjun Kumar', phone: '9876543210', parentPhone: '9123456780', schoolCollege: 'XYZ', location: 'Hyderabad',
+      name: 'Arjun Kumar', phone: '9876543210', parentPhone: '9123456780', parentName: 'Ravi Kumar', schoolCollege: 'XYZ', location: 'Hyderabad',
     });
     expect(walk.body.code).toBe('VENUE_FULL');
     ov = await overview(event.id);
@@ -261,9 +264,14 @@ describe.skipIf(!url)('rooms, teams and seat allocation (database)', () => {
 
     // New student: phone, then details, then a seat. Asking again returns the same seat.
     expect((await pub('/lookup', 'POST', { phone: '98111 11111' })).body.state).toBe('new');
-    const details = { name: 'Rahul S', phone: '9811111111', parentPhone: '9833333333', schoolCollege: 'PES', location: 'Jayanagar' };
+    const answers = { grade: 'class_12', stream: 'maths', lunch: 'veg' };
+    const details = { name: 'Rahul S', phone: '9811111111', parentPhone: '9833333333', parentName: 'Suresh S', schoolCollege: 'PES', location: 'Jayanagar', answers };
+    // Class, subjects and lunch are required on the student page; a school class needs its subjects.
+    expect((await pub('/checkin', 'POST', { ...details, answers: undefined })).status).toBe(400);
+    expect((await pub('/checkin', 'POST', { ...details, answers: { grade: 'class_12', lunch: 'veg' } })).status).toBe(400);
     const seat = await pub('/checkin', 'POST', details);
     expect(seat.status).toBe(200);
+    expect(seat.body.participant.className).toBe('Class 12 · PCM / MPC');
     expect(seat.body.room).toBe('Lab');
     const again = await pub('/lookup', 'POST', { phone: '9811111111' });
     expect(again.body).toMatchObject({ state: 'seated', assignment: { seatCode: seat.body.seatCode } });
@@ -273,9 +281,10 @@ describe.skipIf(!url)('rooms, teams and seat allocation (database)', () => {
     const reg = await pub('/lookup', 'POST', { phone: '9822222222' });
     expect(reg.body).toMatchObject({ state: 'registered', participant: { name: 'Kavya Rao', hasParentPhone: false } });
     expect(reg.body.participant.phone).toBe('••••••2222');
-    const kavya = { name: 'Kavya Rao', phone: '9822222222', schoolCollege: 'RV College', location: 'Malleshwaram' };
+    const kavya = { name: 'Kavya Rao', phone: '9822222222', schoolCollege: 'RV College', location: 'Malleshwaram', answers: { grade: 'college', studyDetail: 'B.E. CSE', lunch: 'non_veg' } };
     expect((await pub('/checkin', 'POST', kavya)).body.code).toBe('INVALID_PHONE');
-    expect((await pub('/checkin', 'POST', { ...kavya, parentPhone: '9844444444' })).status).toBe(200);
+    expect((await pub('/checkin', 'POST', { ...kavya, parentPhone: '9844444444' })).body.code).toBe('PARENT_NAME_REQUIRED');
+    expect((await pub('/checkin', 'POST', { ...kavya, parentPhone: '9844444444', parentName: 'Mohan Rao' })).status).toBe(200);
     // Rahul is known from Bengaluru, so another event pre-fills his details.
     const elsewhere = await call(null, 'POST', '/public/events/hyderabad/8-nov-2026/lookup', { phone: '9811111111' });
     expect(elsewhere.body).toMatchObject({ state: 'returning', participant: { name: 'Rahul S', hasParentPhone: true } });

@@ -1,6 +1,7 @@
 import { Router, type Request } from 'express';
 import * as XLSX from 'xlsx';
 import { z } from 'zod';
+import { audit } from '../lib/audit.js';
 import { adminOf } from '../lib/auth.js';
 import { notFound } from '../lib/errors.js';
 import {
@@ -42,22 +43,30 @@ projectsRouter.post('/projects/:submissionId/re-evaluate', async (req, res) => {
 
 /** Lets the team submit again (their submission and its scores are removed). */
 projectsRouter.delete('/projects/:submissionId', async (req, res) => {
-  res.json(await deleteSubmission(eventIdOf(req), Number(req.params.submissionId), actorOf(req)));
+  const result = await deleteSubmission(eventIdOf(req), Number(req.params.submissionId), actorOf(req));
+  await audit(req, 'project.delete', { eventId: eventIdOf(req), target: req.params.submissionId });
+  res.json(result);
 });
 
 projectsRouter.patch('/projects/:submissionId', async (req, res) => {
   const v = reviewInput.parse(req.body);
-  res.json(await reviewSubmission(eventIdOf(req), Number(req.params.submissionId), v, actorOf(req)));
+  const result = await reviewSubmission(eventIdOf(req), Number(req.params.submissionId), v, actorOf(req));
+  await audit(req, 'project.review', { eventId: eventIdOf(req), target: req.params.submissionId, details: v });
+  res.json(result);
 });
 
 projectsRouter.post('/projects/rooms/:roomId/awards', async (req, res) => {
   const v = awardsInput.parse(req.body);
-  res.json(await setAwards(eventIdOf(req), Number(req.params.roomId), v, actorOf(req)));
+  const result = await setAwards(eventIdOf(req), Number(req.params.roomId), v, actorOf(req));
+  await audit(req, 'project.awards', { eventId: eventIdOf(req), target: `room:${req.params.roomId}`, details: v });
+  res.json(result);
 });
 
 projectsRouter.post('/projects/rooms/:roomId/lock', async (req, res) => {
   const { locked } = z.object({ locked: z.boolean() }).parse(req.body);
-  res.json(await setResultsLock(eventIdOf(req), Number(req.params.roomId), locked));
+  const result = await setResultsLock(eventIdOf(req), Number(req.params.roomId), locked);
+  await audit(req, locked ? 'project.lock' : 'project.unlock', { eventId: eventIdOf(req), target: `room:${req.params.roomId}` });
+  res.json(result);
 });
 
 /** The page as the AI saw it. Opened in an <img>, so the session token comes in the query string. */
@@ -80,6 +89,7 @@ projectsRouter.get('/projects/export', async (req, res) => {
     Rank: p.rank ?? '',
     Award: p.award ? AWARD_LABEL[p.award] : '',
     Team: `${event.teamNamePrefix} ${p.teamNumber}`,
+    'Team Name': p.teamName ?? '',
     Members: p.members.join(', '),
     Project: p.projectName,
     Theme: p.theme,

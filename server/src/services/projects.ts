@@ -27,6 +27,7 @@ export const memberInput = z.object({
 });
 
 export const submissionInput = memberInput.extend({
+  teamName: z.string().trim().min(2, 'Enter your team’s name').max(60),
   projectName: z.string().trim().min(2, 'Enter your project’s name').max(80),
   theme: z.enum(PROJECT_THEMES, { errorMap: () => ({ message: 'Choose your project’s theme' }) }),
   problemStatement: z.string().trim().min(15, 'Describe the problem in a sentence or two').max(600),
@@ -89,7 +90,7 @@ async function loadTeam(eventId: number, teamId: number) {
 export async function publicTeam(eventId: number, teamId: number) {
   const { team, members } = await loadTeam(eventId, teamId);
   const { rows: [sub] } = await pool.query(
-    `SELECT ps.project_name, ps.theme, ps.problem_statement, ps.project_url, ps.submitted_at, ps.updated_at, ps.is_late,
+    `SELECT ps.team_name, ps.project_name, ps.theme, ps.problem_statement, ps.project_url, ps.submitted_at, ps.updated_at, ps.is_late,
        ps.submitted_by, p.name AS submitted_by_name
      FROM project_submissions ps
      LEFT JOIN event_participants ep ON ep.id = ps.submitted_by
@@ -103,6 +104,7 @@ export async function publicTeam(eventId: number, teamId: number) {
     deadline: team.projects_deadline,
     members: members.map((m) => ({ id: m.id, name: shortName(m.name), seat: m.label })),
     submission: sub ? {
+      teamName: sub.team_name,
       projectName: sub.project_name,
       theme: sub.theme,
       problemStatement: sub.problem_statement,
@@ -163,11 +165,11 @@ export async function submitProject(eventId: number, teamId: number, v: Submissi
     const late = room.projects_deadline !== null && new Date(room.projects_deadline).getTime() < Date.now();
     // Two teammates pressing submit at the same moment: the first one wins, the second gets "already submitted".
     const { rows: [saved] } = await client.query(
-      `INSERT INTO project_submissions (event_id, room_id, team_id, project_name, theme, problem_statement, project_url, submitted_by, is_late)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO project_submissions (event_id, room_id, team_id, project_name, theme, problem_statement, project_url, submitted_by, is_late, team_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (team_id) DO NOTHING
        RETURNING is_late`,
-      [eventId, team.room_id, teamId, v.projectName, v.theme, v.problemStatement, url, v.memberId, late],
+      [eventId, team.room_id, teamId, v.projectName, v.theme, v.problemStatement, url, v.memberId, late, v.teamName],
     );
     if (!saved) throw alreadySubmittedError();
     return { late: saved.is_late as boolean };
@@ -249,6 +251,8 @@ interface ProjectRow {
   roomId: number;
   teamId: number;
   teamNumber: number;
+  /** The name the team gave itself, if any. */
+  teamName: string | null;
   projectName: string;
   theme: string;
   problemStatement: string;
@@ -370,6 +374,7 @@ export async function projectsOverview(eventId: number, prefix: string) {
       roomId: s.room_id,
       teamId: s.team_id,
       teamNumber: team?.team_number ?? 0,
+      teamName: s.team_name,
       projectName: s.project_name,
       theme: s.theme,
       problemStatement: s.problem_statement,

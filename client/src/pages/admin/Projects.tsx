@@ -214,7 +214,7 @@ function RoomPanel({ room, data, eventId, prefix, canPresent, onPresent, onAnnou
             <label key={a.key} className="text-sm"><span className="label">{a.label}</span>
               <select className="input" disabled={locked} value={awards[a.key] ?? ''} onChange={(e) => setAwards({ ...awards, [a.key]: e.target.value ? Number(e.target.value) : null })}>
                 <option value="">—</option>
-                {ranked.map((p) => <option key={p.id} value={p.id}>#{p.rank} {prefix} {p.teamNumber} · {p.projectName}</option>)}
+                {ranked.map((p) => <option key={p.id} value={p.id}>#{p.rank} {prefix} {p.teamNumber}{p.teamName ? ` “${p.teamName}”` : ''} · {p.projectName}</option>)}
               </select>
             </label>
           ))}

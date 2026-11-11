@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pool, withTransaction } from '../db/pool.js';
 import { adminOf, eventScope, isSuper, requireSuperAdmin } from '../lib/auth.js';
 import { AppError, badRequest, notFound } from '../lib/errors.js';
+import { audit } from '../lib/audit.js';
 import { assertSlug, RESERVED_LOCATION_SLUGS, slugify } from '../lib/slug.js';
 
 /** Platform-wide endpoints: locations, admin accounts and the cross-location overview. */
@@ -141,6 +142,7 @@ platformRouter.patch('/admins/:adminId', requireSuperAdmin, async (req, res) => 
       [id, role, status, me.email],
     );
   });
+  await audit(req, 'admin.update', { target: id, details: v });
   res.json({ ok: true });
 });
 

@@ -47,7 +47,7 @@ export default function Export() {
         </div>
 
         <p className="mt-4 text-sm leading-relaxed text-niat-muted">
-          Includes <strong>Name</strong>, <strong>Phone</strong>, <strong>Parent Phone</strong>, <strong>School/College</strong>, <strong>Class</strong>, <strong>Coming From</strong>, <strong>Source</strong>, <strong>Registration Type</strong>, <strong>Status</strong>, <strong>Room</strong>, <strong>Team</strong>, <strong>Seat</strong>, and <strong>Check-in Time</strong>.
+          Includes <strong>Name</strong>, <strong>Phone</strong>, <strong>Parent Name</strong>, <strong>Parent Phone</strong>, <strong>School/College</strong>, <strong>Class</strong>, <strong>Coming From</strong>, <strong>Source</strong>, <strong>Registration Type</strong>, <strong>Status</strong>, <strong>Room</strong>, <strong>Team</strong>, <strong>Seat</strong>, and <strong>Check-in Time</strong>.
           Participants who have not yet checked in are included with their pre-assigned room or pending status.
         </p>
 

@@ -60,7 +60,7 @@ export default function Import() {
       const get = (k: FieldKey) => (mapping[k] >= 0 ? r.cells[mapping[k]] : '');
       const values = {
         name: get('name'), phone: get('phone'), schoolCollege: get('schoolCollege'), className: get('className'),
-        parentPhone: get('parentPhone'), location: get('location'), source: get('source'),
+        parentPhone: get('parentPhone'), parentName: get('parentName'), location: get('location'), source: get('source'),
       };
       let issue: Issue | null = null;
       const phone = normalizePhone(values.phone);
@@ -118,7 +118,7 @@ export default function Import() {
         >
           <span className="text-4xl">📄</span>
           <span className="mt-2 text-lg font-semibold">Drop an Excel or CSV file here, or click to choose</span>
-          <span className="mt-1 text-sm text-niat-muted">Needs columns for Name, Phone, School/College and Source (any order). Class, Parent Phone and Area are optional.</span>
+          <span className="mt-1 text-sm text-niat-muted">Needs columns for Name, Phone, School/College and Source (any order). Class, Parent Name, Parent Phone and Area are optional.</span>
           <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
         </label>
         {error && <p className="mt-4 rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}

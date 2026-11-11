@@ -5,10 +5,10 @@ import { CtaButton } from './CtaButton';
 import { initials } from './Search';
 
 const AUTO_RETURN_SECONDS = 20;
-// The draw: the TEAM reel lands first, then the SEAT reel, then the celebration.
-const TEAM_LANDS_MS = 1300;
-const SEAT_LANDS_MS = 2100;
-const pad = (n: number | null) => (n === null ? '—' : String(n).padStart(2, '0'));
+// The draw: a chit rises from the bowl and unfolds, the TEAM reel lands, then the SEAT reel, then the celebration.
+const TEAM_LANDS_MS = 2000;
+const SEAT_LANDS_MS = 2800;
+const CHIT_OPEN_MS = 650; // the bowl sinks away just before the chit unfolds
 
 /** "BHUTHKURI LAASYA" / "bhuthkuri laasya" → "Bhuthkuri Laasya"; names already in mixed case stay as typed. */
 export function displayName(name: string): string {
@@ -17,17 +17,13 @@ export function displayName(name: string): string {
   return n.toLowerCase().replace(/(^|[\s.'-])(\p{L})/gu, (_, sep: string, ch: string) => sep + ch.toUpperCase());
 }
 
-/** "10:00" → "10:00 AM". */
-function clock(time?: string) {
-  const m = time?.match(/^(\d{1,2}):(\d{2})/);
-  if (!m) return null;
-  const h = Number(m[1]);
-  return `${((h + 11) % 12) + 1}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+/** Buzz ticks that slow down like a reel settling, filling `total` ms (phones that can buzz; ignored elsewhere). */
+function tickPattern(total: number): number[] {
+  const out: number[] = [];
+  let gap = 60;
+  for (let t = 0; t + 10 + gap < total; gap = Math.round(gap * 1.18)) { out.push(10, gap); t += 10 + gap; }
+  return out;
 }
-
-const shortDate = (iso?: string) => (iso
-  ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-  : null);
 
 const prefersReducedMotion = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -40,23 +36,43 @@ export interface SeatEventInfo {
 }
 
 /**
- * The seat moment, built for a phone screen. A first-time seat runs "the team draw": two reels shuffle
- * and land on the student's TEAM, then their SEAT, with a burst of light, confetti and a buzz, so
- * getting placed feels like winning. Then it shows how to get there (room → team → seat) and who is at
- * the table. Reopening it ("Welcome back") skips the draw. Tapping the card skips it too.
+ * The seat moment, built for a phone screen. A first-time seat runs "the chit draw", like picking a slip
+ * from a bowl: a folded chit jumps out of the bowl, unfolds, and the TEAM and SEAT reels on it land on
+ * the student's code (3A), with a burst of light, confetti and a buzz. Then it shows how to get there in
+ * walking order (room → team table → seat) and who is at the table. Reopening it ("Welcome back") skips
+ * the draw; tapping the chit skips it too.
  *
  * `kiosk` mode (gate laptop): Next Student + auto-return. `personal` mode (student's phone): stays put.
  */
-export function SeatReveal({ assignment, mode, onDone, event }: {
+export function SeatReveal({ assignment, mode, onDone }: {
   assignment: SeatAssignment;
   mode: 'kiosk' | 'personal';
   onDone: () => void;
+  /** Kept for callers; the seat screen no longer prints the event line. */
   event?: SeatEventInfo;
 }) {
   const returning = assignment.alreadyAssigned;
   const [phase, setPhase] = useState<Phase>(() => (returning || prefersReducedMotion() ? 'done' : 'spinning'));
   const drew = useRef(phase !== 'done'); // this view ran the draw (celebrate at the end)
   const done = phase === 'done';
+  // After the code lands the celebration comes in beats (stamp → confetti → the way → the table), then the page
+  // goes still so the student can read it: stage 0 = just landed … 3 = everything shown; calm = decorations gone.
+  const [stage, setStage] = useState(drew.current ? 0 : 3);
+  const [calm, setCalm] = useState(!drew.current);
+  useEffect(() => {
+    if (!done || !drew.current) return;
+    const ts = [setTimeout(() => setStage(1), 500), setTimeout(() => setStage(2), 900),
+      setTimeout(() => setStage(3), 1500), setTimeout(() => setCalm(true), 4800)];
+    return () => ts.forEach(clearTimeout);
+  }, [done]);
+  const chitRef = useRef<HTMLDivElement>(null);
+  // The bowl stays only while the chit jumps out and opens, then sinks away.
+  const [bowlOut, setBowlOut] = useState(!drew.current);
+  useEffect(() => {
+    if (bowlOut) return;
+    const t = setTimeout(() => setBowlOut(true), CHIT_OPEN_MS);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const doneRef = useRef<HTMLButtonElement>(null);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
@@ -64,6 +80,7 @@ export function SeatReveal({ assignment, mode, onDone, event }: {
   // The draw's timeline. Skipping jumps straight to 'done'.
   useEffect(() => {
     if (phase === 'done') return;
+    vibrate(tickPattern(TEAM_LANDS_MS));
     const t1 = setTimeout(() => { setPhase('team-landed'); vibrate(18); }, TEAM_LANDS_MS);
     const t2 = setTimeout(() => setPhase('done'), SEAT_LANDS_MS);
     return () => { clearTimeout(t1); clearTimeout(t2); };
@@ -81,112 +98,92 @@ export function SeatReveal({ assignment, mode, onDone, event }: {
   }, [mode]);
 
   const name = displayName(assignment.participant.name);
+  const firstName = name.split(' ')[0];
   const seatLetter = assignment.seatLabel ?? '—';
-  const eventLine = [event?.locationName, shortDate(event?.date), clock(event?.time)].filter(Boolean).join(' · ');
+  const teamNo = assignment.teamNumber === null ? '—' : String(assignment.teamNumber);
 
   return (
     <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col items-center pb-4 pt-1 text-center sm:py-6">
-      {!returning && <div className="aurora" aria-hidden />}
-      {done && drew.current && <Confetti />}
+      <div className="aurora" aria-hidden />
+      {stage >= 1 && drew.current && <ConfettiCannons anchor={chitRef} />}
 
       {/* Headline: what's happening now. */}
       <div className="relative z-10 w-full" aria-live="polite">
         {returning ? (
           <>
             <div className="eyebrow animate-fade-up">Your seat is safe</div>
-            <h1 className="mt-2 animate-fade-up text-[30px] font-extrabold leading-tight tracking-tight sm:text-5xl">Welcome back 👋</h1>
+            <h1 className="mt-1.5 animate-fade-up text-[28px] font-extrabold leading-tight tracking-tight sm:text-5xl">Welcome back, {firstName} 👋</h1>
           </>
         ) : done ? (
           <>
-            <div className="eyebrow animate-fade-up">You’re in</div>
-            <h1 key="won" className="mt-2 animate-seat-pop text-[30px] font-extrabold leading-tight tracking-tight sm:text-5xl">
-              🎉 Welcome to {assignment.teamName ?? 'your team'}!
+            <div className="eyebrow animate-fade-up">You’re in, {firstName}!</div>
+            <h1 key="won" className="mt-1.5 animate-seat-pop text-[28px] font-extrabold leading-tight tracking-tight sm:text-5xl">
+              Welcome to {assignment.teamName ?? 'your team'} 🎉
             </h1>
           </>
         ) : (
           <>
             <div className="eyebrow">The team draw</div>
-            <h1 className="mt-2 text-[30px] font-extrabold leading-tight tracking-tight sm:text-5xl">
-              {phase === 'spinning' ? 'Shuffling the teams…' : 'Picking your seat…'}
+            <h1 key={phase === 'spinning' ? (bowlOut ? 'open' : 'shake') : 'team'}
+              className="headline-swap mt-1.5 text-[28px] font-extrabold leading-tight tracking-tight sm:text-5xl">
+              {phase === 'spinning' ? (bowlOut ? 'Opening your chit…' : 'Shaking the bowl…') : <>Team {teamNo}! And seat…</>}
             </h1>
           </>
         )}
-        <p className="mt-1 truncate text-base font-bold text-niat-muted sm:text-lg">{name}</p>
-        {done && <p className="sr-only">{`${assignment.teamName}, seat ${seatLetter}, ${assignment.room}.`}</p>}
+        {done && <p className="sr-only">{`Go to ${assignment.room}, find the ${assignment.teamName} table, and sit in seat ${seatLetter}.`}</p>}
       </div>
 
-      {/* The card: the reels land here and stay as the result. Tap to skip the draw. */}
+      {/* The chit: drawn from the bowl, unfolds, and the code lands on it. Tap to skip the draw. */}
       <div onClick={() => !done && setPhase('done')}
-        className={`relative z-10 mt-4 w-full overflow-hidden rounded-[30px] border border-niat-line bg-white shadow-[var(--shadow-lift)] ${done ? '' : 'cursor-pointer'}`}>
-        <div aria-hidden className="h-2 bg-gradient-to-r from-niat-maroon via-niat-maroon to-niat-gold" />
-        <div className="flex items-center justify-between gap-2 px-5 pt-3.5 text-left">
-          <span className="text-[11px] font-extrabold tracking-[0.18em] text-niat-maroon">AI BOOTCAMP</span>
-          {eventLine && <span className="truncate text-[11px] font-semibold text-niat-muted">{eventLine}</span>}
-        </div>
-
-        <div className="relative px-5 pb-2 pt-4">
-          {done && (
+        className={`relative z-10 mt-5 w-full ${done ? '' : 'cursor-pointer'}`}>
+        {done && !calm && <div className="chit-halo" aria-hidden />}
+        {done && !calm && <FloatingSparks />}
+        {drew.current && <Bowl leaving={bowlOut || done} />}
+        <div ref={chitRef} className={`chit relative mx-auto w-[88%] max-w-[340px] ${drew.current ? 'chit-draw' : ''} ${done && drew.current ? 'chit-shine chit-impact' : ''}`}>
+          {done && !calm && (
             <>
               <div className="seat-rays" aria-hidden />
               <Sparkles />
               {drew.current && <div className="win-flash" aria-hidden />}
             </>
           )}
-          <div className="relative grid grid-cols-2 gap-3" aria-hidden={!done}>
-            <ReelColumn label="Team">
-              <Reel final={pad(assignment.teamNumber)} values={teamValues(assignment.teamNumber)}
-                spinning={phase === 'spinning'} durationMs={TEAM_LANDS_MS} landed={phase !== 'spinning'} />
-            </ReelColumn>
-            <ReelColumn label="Seat">
-              <Reel final={seatLetter} values={seatValues(assignment)}
-                spinning={phase !== 'done'} durationMs={SEAT_LANDS_MS} landed={done} />
-            </ReelColumn>
+          <div className="relative px-5 pb-4 pt-3.5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-niat-muted">Your seat code</div>
+            <div className="mt-1.5 flex items-start justify-center gap-2" aria-hidden={!done}>
+              <div className="w-[44%]">
+                <Reel final={teamNo} values={teamValues(assignment.teamNumber)}
+                  spinning={phase === 'spinning'} durationMs={TEAM_LANDS_MS} landed={phase !== 'spinning'} />
+                <div className="mt-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-niat-muted">Team</div>
+              </div>
+              <div className="w-[44%]">
+                <Reel final={seatLetter} values={seatValues(assignment)}
+                  spinning={phase !== 'done'} durationMs={SEAT_LANDS_MS} landed={done} />
+                <div className="mt-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-niat-muted">Seat</div>
+              </div>
+            </div>
+            <div className="mt-2.5 flex min-h-7 items-center justify-center gap-2 text-xs font-semibold text-niat-muted">
+              {done ? (
+                <>
+                  <span className={`${drew.current ? 'code-stamp' : ''} inline-flex -rotate-6 flex-col items-center rounded-md border-2 border-niat-maroon px-2 py-0.5 leading-none text-niat-maroon`}>
+                    {assignment.room && <span className="max-w-[9rem] truncate text-[9px] font-extrabold uppercase tracking-[0.18em]">{assignment.room}</span>}
+                    <span className="text-[16px] font-black tracking-wide">{assignment.seatCode ?? `${teamNo}${seatLetter}`}</span>
+                  </span>
+                  <span>means Team {teamNo}, seat {seatLetter}</span>
+                </>
+              ) : 'Tap to skip'}
+            </div>
           </div>
-          {done ? (
-            <div className="relative mt-3 animate-fade-in text-xs font-semibold text-niat-muted">
-              Seat code <span className="font-extrabold tracking-wider text-niat-text">{assignment.seatCode ?? '—'}</span>
-            </div>
-          ) : (
-            <div className="relative mt-3 text-xs font-semibold text-niat-muted/80">Tap to skip</div>
-          )}
         </div>
-
-        {done && (
-          <>
-            {/* Ticket perforation */}
-            <div className="relative my-2 flex items-center" aria-hidden>
-              <span className="-ml-3 h-6 w-6 rounded-full bg-niat-warm-white ring-1 ring-niat-line" />
-              <span className="mx-2 flex-1 border-t-2 border-dashed border-niat-line" />
-              <span className="-mr-3 h-6 w-6 rounded-full bg-niat-warm-white ring-1 ring-niat-line" />
-            </div>
-
-            {/* Where to go, in walking order: room first, then the table, then the seat. */}
-            <div className="animate-fade-up px-5 pb-5 pt-1 text-left">
-              <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-niat-muted">How to find your seat</div>
-              <ol className="mt-2 flex items-stretch gap-1.5">
-                {[['Room', assignment.room ?? '—'], ['Table', assignment.teamName ?? '—'], ['Seat', seatLetter]].map(([label, value], i) => (
-                  <li key={label} className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <div className={`min-w-0 flex-1 rounded-2xl px-2 py-2.5 text-center ${i === 0
-                      ? 'bg-niat-maroon text-white shadow-[var(--shadow-soft)]' : 'bg-niat-warm-white text-niat-text ring-1 ring-niat-line/80'}`}>
-                      <div className={`text-[10px] font-bold uppercase tracking-wider ${i === 0 ? 'text-niat-gold-light' : 'text-niat-muted'}`}>
-                        {i + 1} · {label}
-                      </div>
-                      <div className="mt-0.5 truncate text-base font-extrabold">{value}</div>
-                    </div>
-                    {i < 2 && <span aria-hidden className="shrink-0 text-sm font-bold text-niat-muted/70">→</span>}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </>
-        )}
       </div>
 
-      {done && <YourTable assignment={assignment} />}
+      {/* Where to go, in walking order: room, then the team's table, then the seat. */}
+      {stage >= 2 && <WalkPath assignment={assignment} teamNo={teamNo} seatLetter={seatLetter} interactive={mode === 'personal'} />}
 
-      {done && (
-        <p className="relative z-10 mt-4 animate-fade-in text-sm font-semibold text-niat-maroon" style={{ animationDelay: '350ms' }}>
-          {mode === 'personal' ? '📸 Take a screenshot of your seat. See you inside ✨' : 'See you inside ✨'}
+      {stage >= 3 && <YourTable assignment={assignment} />}
+
+      {stage >= 3 && (
+        <p className="relative z-10 mt-4 animate-fade-in text-sm font-semibold text-niat-maroon" style={{ animationDelay: '300ms' }}>
+          {mode === 'personal' ? '📸 Take a screenshot of this. See you inside ✨' : 'See you inside ✨'}
         </p>
       )}
 
@@ -200,10 +197,10 @@ export function SeatReveal({ assignment, mode, onDone, event }: {
           </div>
           <p className="mt-2 text-xs text-niat-muted/80">Returns to search automatically</p>
         </div>
-      ) : done && (
+      ) : stage >= 3 && (
         // Secondary action, at the end of the page so it never covers the seat or the team.
         <button onClick={onDone}
-          className="relative z-10 mt-4 cursor-pointer rounded-lg px-4 py-3 text-base font-bold text-niat-maroon underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-niat-gold/50">
+          className="relative z-10 mt-3 cursor-pointer rounded-lg px-4 py-3 text-sm font-bold text-niat-muted underline-offset-4 transition-colors hover:text-niat-maroon hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-niat-gold/50">
           Check in someone else
         </button>
       )}
@@ -211,11 +208,157 @@ export function SeatReveal({ assignment, mode, onDone, event }: {
   );
 }
 
-function ReelColumn({ label, children }: { label: string; children: React.ReactNode }) {
+// Icons (Lucide, ISC licence): an open door for the room, a group for the team's table, a chair for the seat.
+const ICONS = {
+  room: <><path d="M13 4h3a2 2 0 0 1 2 2v14" /><path d="M2 20h3" /><path d="M13 20h9" /><path d="M10 12v.01" /><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z" /></>,
+  team: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
+  seat: <><path d="M19 9V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3" /><path d="M3 16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v1.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5V11a2 2 0 0 0-4 0z" /><path d="M5 18v2" /><path d="M19 18v2" /></>,
+};
+
+/**
+ * The way to the seat as a walking checklist: room → team → seat. The step to do now is the maroon strip;
+ * on the student's phone they tap it once they're there and the next one lights up, until "You're in your
+ * seat!". Progress is kept on the phone, so reopening the page picks up where they were.
+ * On the gate laptop (kiosk) it is a plain list with the room highlighted.
+ */
+function WalkPath({ assignment, teamNo, seatLetter, interactive }: {
+  assignment: SeatAssignment; teamNo: string; seatLetter: string; interactive: boolean;
+}) {
+  const key = `aibootcamp.walk.${assignment.eventParticipantId}`;
+  const [reached, setReached] = useState(() => {
+    if (!interactive) return 0;
+    try { return Math.min(3, Number(localStorage.getItem(key)) || 0); } catch { return 0; }
+  });
+  const steps = [
+    { label: 'Go to', value: assignment.room ?? '—', icon: ICONS.room },
+    { label: 'Find your team', value: assignment.teamName ?? `Team ${teamNo}`, icon: ICONS.team },
+    { label: 'Sit in seat', value: seatLetter, icon: ICONS.seat },
+  ];
+  const all = reached >= steps.length;
+
+  const advance = (i: number) => {
+    if (!interactive || i !== reached) return;
+    vibrate(i === steps.length - 1 ? [20, 40, 60] : 15);
+    setReached(i + 1);
+    try { localStorage.setItem(key, String(i + 1)); } catch { /* storage unavailable */ }
+  };
+
   return (
-    <div>
-      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.24em] text-niat-muted">{label}</div>
-      {children}
+    <section className="relative z-10 mt-5 w-full rounded-[var(--radius-card)] border border-niat-line bg-white/95 p-3 text-left shadow-[var(--shadow-card)]">
+      <div className="flex items-center justify-between gap-3 px-1.5 pb-1 pt-1">
+        <h2 className="text-[15px] font-extrabold tracking-tight">Your way to your seat</h2>
+        {interactive && (
+          <span className="shrink-0 rounded-full bg-niat-pink px-2.5 py-0.5 text-xs font-bold tabular-nums text-niat-maroon">
+            {Math.min(reached + (all ? 0 : 1), 3)} of 3
+          </span>
+        )}
+      </div>
+      {interactive && !all && (
+        <p className="px-1.5 text-[13px] text-niat-muted">Tap each step when you’re there.</p>
+      )}
+      {interactive && (
+        <div className="mx-1.5 mb-3 mt-2 h-1.5 overflow-hidden rounded-full bg-niat-line/70" aria-hidden>
+          <div className="h-full rounded-full bg-gradient-to-r from-niat-gold to-niat-maroon transition-[width] duration-500 ease-out"
+            style={{ width: `${(reached / steps.length) * 100}%` }} />
+        </div>
+      )}
+
+      <ol className={interactive ? '' : 'mt-2'}>
+        {steps.map((s, i) => {
+          const state = i < reached ? 'done' : i === reached ? 'now' : 'next';
+          const now = state === 'now';
+          const Tag = interactive && now ? 'button' : 'div';
+          return (
+            <li key={s.label} className="walk-step" style={{ '--i': i } as React.CSSProperties}>
+              {i > 0 && (
+                <div aria-hidden className="flex h-5 w-[60px] items-center justify-center">
+                  <svg viewBox="0 0 12 20" className={`h-5 w-3 ${i <= reached ? 'text-niat-maroon' : 'text-niat-line'}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 1v12" strokeDasharray="2 3" /><path d="M2.5 11.5 6 15l3.5-3.5" />
+                  </svg>
+                </div>
+              )}
+              <Tag {...(Tag === 'button' ? { type: 'button' as const, onClick: () => advance(i) } : {})}
+                aria-current={now ? 'step' : undefined}
+                aria-label={interactive && now ? `Step ${i + 1}: ${s.label} ${s.value}. Tap when you’re there.` : undefined}
+                className={`relative flex w-full items-center gap-3 rounded-2xl py-2.5 pl-2.5 pr-4 text-left transition-all duration-300 ${
+                  now ? `bg-gradient-to-r from-niat-maroon to-niat-maroon-dark text-white shadow-[var(--shadow-soft)] ${interactive ? 'walk-now active:scale-[0.98]' : ''}`
+                    : state === 'done' ? 'bg-emerald-50 ring-1 ring-emerald-200'
+                      : 'bg-niat-warm-white ring-1 ring-niat-line/80'}`}>
+                <span className={`relative grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
+                  now ? 'bg-white/15 text-white' : state === 'done' ? 'bg-emerald-500 text-white' : 'bg-white text-niat-maroon ring-1 ring-niat-line'}`}>
+                  {state === 'done' ? (
+                    <svg aria-hidden viewBox="0 0 24 24" className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                  ) : (
+                    <svg aria-hidden viewBox="0 0 24 24" className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{s.icon}</svg>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={`block truncate text-[10.5px] font-bold uppercase tracking-[0.12em] ${now ? 'text-niat-gold-light' : state === 'done' ? 'text-emerald-600' : 'text-niat-muted/80'}`}>
+                    Step {i + 1}{interactive && now ? ' · Now' : state === 'done' ? ' · Done' : ''}
+                  </span>
+                  <span className={`block text-[15px] font-bold ${now ? 'text-white' : state === 'done' ? 'text-emerald-800' : 'text-niat-text'}`}>{s.label}</span>
+                </span>
+                <span className={`max-w-[50%] truncate text-right font-extrabold leading-none ${
+                  now ? 'text-[24px]' : state === 'done' ? 'text-[20px] text-emerald-800' : 'text-[22px] text-niat-text'}`}>{s.value}</span>
+              </Tag>
+            </li>
+          );
+        })}
+      </ol>
+
+      {interactive && all && (
+        <div className="walk-done mt-3 flex items-center gap-3 rounded-2xl bg-gradient-to-r from-niat-cream to-white px-4 py-3 ring-1 ring-niat-gold/40">
+          <span aria-hidden className="text-2xl">🎉</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-extrabold">You’re in your seat!</div>
+            <div className="text-sm text-niat-muted">Say hi to your team 👋</div>
+          </div>
+          <button type="button" onClick={() => { setReached(0); try { localStorage.removeItem(key); } catch { /* ignore */ } }}
+            className="shrink-0 text-xs font-bold text-niat-muted underline-offset-4 hover:underline">Reset</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** A few gold sparks drifting up behind the chit once it has landed. */
+function FloatingSparks() {
+  const sparks = [
+    { left: '6%', delay: '0s', size: 6, dur: '5.5s' }, { left: '18%', delay: '1.8s', size: 4, dur: '6.5s' },
+    { left: '82%', delay: '0.9s', size: 5, dur: '6s' }, { left: '94%', delay: '2.6s', size: 4, dur: '7s' },
+    { left: '50%', delay: '3.4s', size: 3, dur: '6.2s' },
+  ];
+  return (
+    <>
+      {sparks.map((p, k) => (
+        <span key={k} aria-hidden className="spark-float"
+          style={{ left: p.left, width: p.size, height: p.size, animationDelay: p.delay, animationDuration: p.dur }} />
+      ))}
+    </>
+  );
+}
+
+/** The bowl of folded chits the student's chit is drawn from. Sinks away once the chit is out. */
+function Bowl({ leaving }: { leaving: boolean }) {
+  return (
+    <div aria-hidden className={`bowl pointer-events-none absolute inset-x-0 top-[58%] z-20 mx-auto h-24 w-[80%] max-w-[300px] ${leaving ? 'bowl-leave' : ''}`}>
+      <svg viewBox="0 0 300 96" className="h-full w-full" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="bowl-body" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#A7191E" /><stop offset="1" stopColor="#6E0518" />
+          </linearGradient>
+        </defs>
+        {/* Folded chits peeking over the rim. */}
+        {[[60, -8], [95, 6], [130, -14], [170, 8], [205, -6], [238, 10]].map(([x, r], k) => (
+          <g key={k} transform={`rotate(${r} ${x + 17} 14)`}>
+            <rect className="bowl-slip" style={{ animationDelay: `${k * 70}ms` }}
+              x={x} y={k % 2 ? 6 : 2} width="34" height="16" rx="3" fill="#FFF8D6" stroke="#E9D9A6" strokeWidth="1.2" />
+          </g>
+        ))}
+        <path d="M6 18 H294 C294 66 230 94 150 94 C70 94 6 66 6 18 Z" fill="url(#bowl-body)" />
+        <rect x="2" y="12" width="296" height="12" rx="6" fill="#FFB719" />
+        <path d="M40 40 C70 70 120 80 150 80" stroke="#fff" strokeOpacity="0.18" strokeWidth="6" strokeLinecap="round" fill="none" />
+      </svg>
     </div>
   );
 }
@@ -223,7 +366,7 @@ function ReelColumn({ label, children }: { label: string; children: React.ReactN
 /** Shuffle strip for the TEAM reel: a run of team numbers that ends on the real one. */
 function teamValues(team: number | null) {
   const top = Math.max(9, (team ?? 1) + 6);
-  return Array.from({ length: 16 }, () => pad(1 + Math.floor(Math.random() * top)));
+  return Array.from({ length: 16 }, () => String(1 + Math.floor(Math.random() * top)));
 }
 
 /** Shuffle strip for the SEAT reel: the table's seat letters, ending on the real one. */
@@ -258,17 +401,22 @@ function Reel({ final, values, spinning, landed, durationMs }: {
   const items = landed ? [final] : strip;
   const offset = started && !landed ? strip.length - 1 : 0;
 
+  const stripStyle = {
+    transform: `translateY(calc(var(--h) * -${offset}))`,
+    transition: started && !landed ? `transform ${durationMs - 80}ms cubic-bezier(0.12, 0.72, 0.18, 1.04)` : 'none',
+  };
+  const cells = items.map((v, i) => (
+    <div key={i} className="reel-item text-[64px] font-extrabold leading-none tracking-tight text-niat-maroon tabular-nums sm:text-[84px]">{v}</div>
+  ));
+
   return (
-    <div className={`reel ${animate ? 'reel-spinning' : ''} ${landed ? 'reel-locked' : ''}`}>
-      <div className="reel-strip"
-        style={{
-          transform: `translateY(calc(var(--h) * -${offset}))`,
-          transition: started && !landed ? `transform ${durationMs - 80}ms cubic-bezier(0.12, 0.72, 0.18, 1.04)` : 'none',
-        }}>
-        {items.map((v, i) => (
-          <div key={i} className="reel-item text-[64px] font-extrabold leading-none tracking-tight text-niat-maroon tabular-nums sm:text-[84px]">{v}</div>
-        ))}
+    <div className={`relative ${landed ? 'reel-locked' : ''}`}>
+      <div className={`reel ${animate ? 'reel-spinning' : ''}`}>
+        <div className="reel-strip" style={stripStyle}>{cells}</div>
+        {/* A faint copy half a row behind reads as motion blur, without a filter (cheap on weak phones). */}
+        {animate && <div className="reel-strip reel-ghost" aria-hidden style={stripStyle}>{cells}</div>}
       </div>
+      {landed && <span className="reel-ring" aria-hidden />}
     </div>
   );
 }
@@ -336,41 +484,50 @@ function Sparkles() {
 
 const CONFETTI_COLORS = ['#A7191E', '#FFB719', '#FFD65A', '#861317', '#FFF8D6'];
 
-/** ~32 tasteful pieces, about a second, then gone. */
-export function Confetti() {
+/**
+ * Two confetti cannons, one in each lower corner, fire up and in; the pieces arc over and flutter down.
+ * Sideways motion and the rise-and-fall run on separate layers, so the fall has real gravity. Gone in ~2.6 s.
+ * The burst is aimed at the chit, wherever it sits on this screen. Small or weak phones get fewer pieces
+ * and no flutter layer.
+ */
+function ConfettiCannons({ anchor }: { anchor: React.RefObject<HTMLDivElement | null> }) {
   const [alive, setAlive] = useState(true);
-  const pieces = useMemo(() => Array.from({ length: 32 }, (_, i) => {
-    const angle = Math.PI + Math.PI * (i / 31);
-    const distance = 140 + Math.random() * 200;
-    return {
-      dx: `${Math.cos(angle) * distance}px`,
-      dy: `${Math.sin(angle) * distance * 0.7 + 240 + Math.random() * 140}px`,
-      rot: `${Math.round(Math.random() * 720 - 360)}deg`,
+  const pieces = useMemo(() => {
+    const light = window.innerWidth < 420 || (navigator.hardwareConcurrency ?? 8) <= 4;
+    const rect = anchor.current?.getBoundingClientRect();
+    const reach = rect ? window.innerHeight - (rect.top + rect.height / 2) : window.innerHeight * 0.6;
+    const r = Math.random;
+    return Array.from({ length: light ? 32 : 56 }, (_, i) => ({
+      left: i % 2 === 0,
+      dx: `${(i % 2 === 0 ? 1 : -1) * (60 + r() * 170)}px`,
+      up: `${-(reach * 0.8 + r() * reach * 0.45)}px`,
+      down: `${120 + r() * 220}px`,
+      rot: `${Math.round(360 + r() * 720) * (r() < 0.5 ? -1 : 1)}deg`,
+      flip: light ? null : `${500 + Math.round(r() * 500)}ms`,
       color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-      delay: `${Math.round(Math.random() * 120)}ms`,
-      dur: `${850 + Math.round(Math.random() * 300)}ms`,
-      round: i % 4 === 0,
-    };
-  }), []);
+      delay: `${Math.round(r() * 160)}ms`,
+      dur: `${1700 + Math.round(r() * 700)}ms`,
+      shape: i % 5 === 0 ? 'dot' : i % 3 === 0 ? 'strip' : 'square',
+    }));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const t = setTimeout(() => setAlive(false), 1500);
+    const t = setTimeout(() => setAlive(false), 2700);
     return () => clearTimeout(t);
   }, []);
   if (!alive) return null;
 
   return (
-    <div aria-hidden className="pointer-events-none absolute left-1/2 top-48 z-20 h-0 w-0 sm:top-64">
+    <div aria-hidden className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
       {pieces.map((p, i) => (
-        <span key={i} className="confetti-piece"
-          style={{
-            background: p.color,
-            borderRadius: p.round ? '999px' : undefined,
-            width: p.round ? 8 : undefined,
-            height: p.round ? 8 : undefined,
-            opacity: 0,
-            '--dx': p.dx, '--dy': p.dy, '--rot': p.rot, '--delay': p.delay, '--dur': p.dur,
-          } as React.CSSProperties} />
+        <span key={i} className="cannon-x" style={{
+          [p.left ? 'left' : 'right']: '-6px', '--dx': p.dx, '--dur': p.dur, '--delay': p.delay,
+        } as React.CSSProperties}>
+          <span className="cannon-y" style={{ '--up': p.up, '--down': p.down, '--dur': p.dur, '--delay': p.delay } as React.CSSProperties}>
+            <span className={`cannon-piece cannon-${p.shape} ${p.flip ? '' : 'cannon-noflip'}`}
+              style={{ background: p.color, '--rot': p.rot, '--flip': p.flip ?? '1s', '--dur': p.dur, '--delay': p.delay } as React.CSSProperties} />
+          </span>
+        </span>
       ))}
     </div>
   );

@@ -66,7 +66,7 @@ export function ProjectDrawer({ eventId, project, teamName, maxTotal, locked, on
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-niat-line bg-white px-5 py-4">
           <div className="min-w-0">
             <div className="text-xs font-bold uppercase tracking-wider text-niat-muted">
-              {teamName}{project.rank ? ` · Rank ${project.rank}` : ''}
+              {teamName}{project.teamName ? ` “${project.teamName}”` : ''}{project.rank ? ` · Rank ${project.rank}` : ''}
             </div>
             <h2 className="truncate text-xl font-extrabold">{project.projectName}</h2>
             <div className="text-sm font-semibold text-niat-maroon">{project.theme}</div>

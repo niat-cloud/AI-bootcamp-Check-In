@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { pool, withTransaction } from '../db/pool.js';
+import { pool, withTransaction, type Db } from '../db/pool.js';
 import { AppError } from '../lib/errors.js';
+import { classLabel, type Answers } from '../lib/answers.js';
 import { maskPhone, normalizePhone } from '../lib/phone.js';
 import { assignSeatTx, type SeatAssignment } from './seating.js';
 
@@ -18,6 +19,7 @@ export const detailsInput = z.object({
   name: z.string().trim().min(2, 'Full name is required').max(100),
   phone: z.string().trim().min(1, 'Phone number is required').max(20),
   parentPhone: z.string().trim().max(20).optional(),
+  parentName: z.string().trim().max(100).optional(),
   schoolCollege: z.string().trim().min(2, 'School/College is required').max(150),
   className: z.string().trim().max(150).optional(),
   location: z.string().trim().min(2, "The location you're coming from is required").max(100),
@@ -79,18 +81,27 @@ export async function searchEvent(eventId: number, rawQuery: string) {
 export async function registerAndSeat(
   eventId: number,
   v: DetailsInput,
-  options: { rejectIfRegistered?: boolean } = {},
+  options: { rejectIfRegistered?: boolean; answers?: Answers | null } = {},
 ): Promise<SeatAssignment> {
+  const answers = options.answers ?? null;
+  // The class answer replaces the free-text class, so every screen and export shows one consistent label.
+  const className = (answers && classLabel(answers)) || v.className || '';
   const phone = requirePhone(v.phone);
   const parentPhone = v.parentPhone ? requirePhone(v.parentPhone, 'parent phone number') : null;
   if (parentPhone && parentPhone === phone) {
     throw new AppError(400, 'INVALID_PHONE', 'Your parent’s mobile number must be different from your own.');
   }
   const name = v.name.replace(/\s+/g, ' ');
+  const parentName = v.parentName?.replace(/\s+/g, ' ') || null;
 
   const result = await withTransaction(async (client) => {
+    // Take the event lock first. Inserting a registration takes a light lock on the event row (its foreign
+    // key), and the seat allocation below then asks for FOR UPDATE on the same row: two walk-ins at the same
+    // moment would each hold the light lock and wait for the other, a deadlock. Locking up front makes every
+    // check-in queue on one lock in one order. Found by demo/loadtest.ts (ARCH-ITEM-4.3).
+    await client.query('SELECT id FROM events WHERE id = $1 FOR UPDATE', [eventId]);
     const { rows: [existing] } = await client.query(
-      `SELECT p.id, p.name, p.parent_phone, ep.id AS ep_id
+      `SELECT p.id, p.name, p.parent_phone, p.parent_name, ep.id AS ep_id
        FROM participants p LEFT JOIN event_participants ep ON ep.participant_id = p.id AND ep.event_id = $2
        WHERE p.phone = $1`,
       [phone, eventId],
@@ -102,19 +113,23 @@ export async function registerAndSeat(
     if (!parentPhone && !existing?.parent_phone) {
       throw new AppError(400, 'INVALID_PHONE', 'Enter a valid 10-digit parent phone number.');
     }
+    if (!parentName && !existing?.parent_name) {
+      throw new AppError(400, 'PARENT_NAME_REQUIRED', 'Enter your parent’s name.');
+    }
 
     const { rows: [person] } = await client.query(
-      `INSERT INTO participants (name, phone, parent_phone, school_college, class, location)
-       VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
+      `INSERT INTO participants (name, phone, parent_phone, school_college, class, location, parent_name)
+       VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7)
        ON CONFLICT (phone) DO UPDATE SET
          name = EXCLUDED.name,
          parent_phone = COALESCE(EXCLUDED.parent_phone, participants.parent_phone),
+         parent_name = COALESCE(EXCLUDED.parent_name, participants.parent_name),
          school_college = EXCLUDED.school_college,
          class = COALESCE(EXCLUDED.class, participants.class),
          location = COALESCE(EXCLUDED.location, participants.location),
          updated_at = now()
        RETURNING id`,
-      [name, phone, parentPhone, v.schoolCollege, v.className ?? '', v.location],
+      [name, phone, parentPhone, v.schoolCollege, className, v.location, parentName],
     );
     const { rows: [ep] } = await client.query(
       `INSERT INTO event_participants (event_id, participant_id, registration_type)
@@ -123,8 +138,17 @@ export async function registerAndSeat(
        RETURNING id`,
       [eventId, person.id],
     );
+    if (answers) await saveAnswers(client, ep.id, answers);
     return assignSeatTx(client, ep.id, { expectedEventId: eventId });
   });
   if (result.waiting) throw waitingListError();
   return result;
+}
+
+/** Stores the check-in answers (class, stream, lunch) on this event's registration. */
+export async function saveAnswers(db: Db, eventParticipantId: number, a: Answers) {
+  await db.query(
+    `UPDATE event_participants SET grade = $2, stream = $3, study_detail = $4, lunch = $5, answered_at = now() WHERE id = $1`,
+    [eventParticipantId, a.grade, a.stream, a.studyDetail, a.lunch],
+  );
 }

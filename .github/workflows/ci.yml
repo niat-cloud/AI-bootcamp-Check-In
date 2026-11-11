@@ -1,0 +1,36 @@
+# ARCH-ITEM-1.4: type-check both apps and run every test, including the database tests, on each push and PR.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:ci@localhost:5432/ci
+      DATABASE_SSL: 'false'
+      AUTH_SECRET: ci-only-secret-not-used-anywhere-else
+      LOG_REQUESTS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The build type-checks both apps (client: tsc -b, server: tsc).
+      - run: npm run build
+      - run: npm test

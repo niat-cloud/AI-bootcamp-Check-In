@@ -46,13 +46,14 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
     const seed = superAdminSeed();
     const login = await call(null, 'POST', '/admin/auth/login', { email: seed.email, password: seed.password });
     expect(login.status).toBe(200);
-    const superToken = login.body.token;
+    let superToken = login.body.token;
     if (login.body.user.mustChangePassword) {
       const changed = await call(superToken, 'POST', '/admin/auth/change-password', {
         currentPassword: seed.password,
         newPassword: 'Bootcamp2026!',
       });
       expect(changed.status).toBe(200);
+      superToken = changed.body.token;
     }
     request = (m, p, b) => call(superToken, m, p, b);
 
@@ -103,6 +104,8 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
       name: 'Alice Walker',
       phone: '9111111111',
       parentPhone: '9888888881',
+      parentName: 'Walker Sr',
+      answers: { grade: 'class_11', stream: 'biology', lunch: 'veg' },
       schoolCollege: 'Tech Uni',
       location: 'Madhapur',
     });
@@ -113,6 +116,8 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
       name: 'Bob Dylan',
       phone: '9222222222',
       parentPhone: '9888888882',
+      parentName: 'Dylan Sr',
+      answers: { grade: 'class_11', stream: 'biology', lunch: 'veg' },
       schoolCollege: 'Tech Uni',
       location: 'Madhapur',
     });
@@ -132,6 +137,7 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
     const earlySubmit = await call(null, 'POST', `/public/events/hyderabad/31-oct-2026/projects/teams/${teamId}`, {
       memberId: aliceEpId,
       phone: '9111111111',
+      teamName: 'Campus Crew',
       projectName: 'CampusHelper',
       theme: 'Student Life Problem Solver',
       problemStatement: 'Students cannot find study rooms easily on campus.',
@@ -171,6 +177,7 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
     const submitRes = await call(null, 'POST', `/public/events/hyderabad/31-oct-2026/projects/teams/${teamId}`, {
       memberId: aliceEpId,
       phone: '9111111111',
+      teamName: 'Campus Crew',
       projectName: 'CampusHelper',
       theme: 'Student Life Problem Solver',
       problemStatement: 'Students cannot find study rooms easily on campus.',
@@ -184,6 +191,7 @@ describe.skipIf(!url)('Projects & Judging workflow (database integration)', () =
     const updateRes = await call(null, 'POST', `/public/events/hyderabad/31-oct-2026/projects/teams/${teamId}`, {
       memberId: aliceEpId,
       phone: '9111111111',
+      teamName: 'Campus Crew',
       projectName: 'CampusHelper v2',
       theme: 'Student Life Problem Solver',
       problemStatement: 'Students cannot find study rooms and campus facilities easily.',

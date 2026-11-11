@@ -16,6 +16,7 @@ const rowInput = z.object({
   schoolCollege: z.string().nullish(),
   className: z.union([z.string(), z.number()]).nullish(),
   parentPhone: z.union([z.string(), z.number()]).nullish(),
+  parentName: z.string().nullish(),
   location: z.string().nullish(),
   source: z.string().nullish(),
 });
@@ -31,7 +32,7 @@ importRouter.post('/import', async (req, res) => {
 
   const rejected: { rowNumber: number; name: string; phone: string; reason: string }[] = [];
   const accepted = new Map<string, {
-    name: string; phone: string; school: string; className: string | null; parentPhone: string | null; location: string | null; source: string | null;
+    name: string; phone: string; school: string; className: string | null; parentPhone: string | null; parentName: string | null; location: string | null; source: string | null;
   }>();
 
   for (const r of rows) {
@@ -61,6 +62,7 @@ importRouter.post('/import', async (req, res) => {
       school,
       className: clean(r.className) || null,
       parentPhone: normalizePhone(r.parentPhone) ?? (clean(r.parentPhone) || null),
+      parentName: clean(r.parentName) || null,
       location: clean(r.location) || null,
       source: clean(r.source) || null,
     });
@@ -74,18 +76,19 @@ importRouter.post('/import', async (req, res) => {
       [eventId, fileName || 'Uploaded file', rows.length, adminOf(req).email],
     );
     const { rows: people } = await client.query(
-      `INSERT INTO participants (name, phone, school_college, class, parent_phone, location)
-       SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
+      `INSERT INTO participants (name, phone, school_college, class, parent_phone, location, parent_name)
+       SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
        ON CONFLICT (phone) DO UPDATE SET
          name = EXCLUDED.name,
          school_college = COALESCE(NULLIF(EXCLUDED.school_college, ''), participants.school_college),
          class = COALESCE(EXCLUDED.class, participants.class),
          parent_phone = COALESCE(EXCLUDED.parent_phone, participants.parent_phone),
+         parent_name = COALESCE(EXCLUDED.parent_name, participants.parent_name),
          location = COALESCE(EXCLUDED.location, participants.location),
          updated_at = now()
        RETURNING id, phone, (xmax = 0) AS inserted`,
       [list.map((p) => p.name), list.map((p) => p.phone), list.map((p) => p.school), list.map((p) => p.className),
-        list.map((p) => p.parentPhone), list.map((p) => p.location)],
+        list.map((p) => p.parentPhone), list.map((p) => p.location), list.map((p) => p.parentName)],
     );
     // RETURNING order isn't guaranteed, so match each person's source by phone.
     // A re-import fills in or corrects the source of people already registered for this event.

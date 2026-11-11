@@ -82,6 +82,9 @@ export function Announce({ room, prefix, onClose }: { room: ProjectRoom; prefix:
           <h1 className="animate-seat-pop mt-4 text-[clamp(2.75rem,7.5vw,6.5rem)] font-extrabold leading-none tracking-tight">
             {prefix} {current.project.teamNumber}
           </h1>
+          {current.project.teamName && (
+            <p className="animate-fade-up mt-3 text-[clamp(1.5rem,3.6vw,3rem)] font-extrabold">“{current.project.teamName}”</p>
+          )}
           <p className="animate-fade-up mt-5 text-[clamp(1.5rem,3.2vw,2.75rem)] font-extrabold text-niat-maroon">{current.project.projectName}</p>
           <p className="animate-fade-up mx-auto mt-5 max-w-3xl text-[clamp(1rem,1.8vw,1.5rem)] font-semibold text-niat-text">
             {current.project.members.join(' · ')}
