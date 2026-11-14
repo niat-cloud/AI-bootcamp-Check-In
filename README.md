@@ -77,8 +77,10 @@ npm test     # unit tests; with DATABASE_URL set, also the full DB scenarios (in
    - `EVENT_TIMEZONE` = `Asia/Kolkata` (optional)
    - `OPENAI_API_KEY` (main), `GEMINI_API_KEY` and/or `ANTHROPIC_API_KEY`: API keys for AI project scoring. Every provider with a key is used in that order: if one fails for a project, the next one scores it. `OPENAI_MODEL`, `GEMINI_MODEL` and `PROJECT_EVAL_MODEL` (Claude) pick the models.
    - `BROWSERLESS_TOKEN` (optional): Browserless headless browser token to render client-side Lovable apps and capture screenshots for the AI evaluator.
-3. **Before every deploy that adds a migration**, run `npm run migrate` locally against the production database (`DATABASE_URL` set in your shell). The serverless function never changes the schema. A local `npm run dev` pointed at a remote database doesn't either, unless `ALLOW_REMOTE_MIGRATE=1` is set.
-4. Deploy, then open `/api/health`. It answers `{"ok":true,"db":"up","migration":"013_hardening.sql"}`; the migration name must match the newest file in `server/src/db/migrations`.
+3. Deploy. **Migrations apply themselves**: the first request on each new deploy brings the database up to that deploy's migrations before anything is served, so the code never runs against an older schema. Several instances starting at once are safe (they take turns through a database lock). Set `AUTO_MIGRATE=false` in Vercel to turn this off and run `npm run migrate` by hand instead. A local `npm run dev` pointed at a remote database never migrates it unless `ALLOW_REMOTE_MIGRATE=1` is set.
+4. Open `/api/health`. It answers `{"ok":true,"db":"up","migration":"…"}`; the migration name should match the newest file in `server/src/db/migrations`.
+
+**Rule for new migrations:** keep them additive (new tables, columns, indexes). A preview deploy or the previous deploy may still be serving against the same database while the new one migrates it, so never rename or drop something the running code uses in the same release.
 
 Note: Vercel limits request bodies to 4.5 MB, which is plenty for participant imports of a few thousand rows.
 
