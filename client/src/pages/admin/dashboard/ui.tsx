@@ -90,3 +90,25 @@ export function RegisteredArrivedBar({ registered, arrived, max }: { registered:
     </div>
   );
 }
+
+/**
+ * The admin's one number card: label, big number, one line of context. Used on every page so the numbers
+ * read the same everywhere. `tone` colours the number when it needs attention or is good news.
+ */
+export function StatTile({ label, value, hint, tone, className = '' }: {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  tone?: 'good' | 'warn' | 'alert';
+  className?: string;
+}) {
+  const number = tone === 'good' ? 'text-emerald-700' : tone === 'warn' ? 'text-amber-800' : tone === 'alert' ? 'text-niat-maroon' : 'text-niat-text';
+  const box = tone === 'warn' ? 'border-amber-300 bg-amber-50/50' : tone === 'alert' ? 'border-niat-maroon/30 bg-niat-pink/40' : 'border-niat-line bg-white';
+  return (
+    <div className={`min-w-0 rounded-2xl border px-4 py-3 shadow-[var(--shadow-card)] ${box} ${className}`}>
+      <dt className="truncate text-[13px] font-semibold text-niat-muted">{label}</dt>
+      <dd className={`mt-0.5 text-[26px] font-bold leading-tight tracking-tight tabular-nums ${number}`}>{value}</dd>
+      {hint && <dd className="mt-0.5 truncate text-[12.5px] text-niat-muted" title={typeof hint === 'string' ? hint : undefined}>{hint}</dd>}
+    </div>
+  );
+}

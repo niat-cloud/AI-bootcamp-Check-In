@@ -1,21 +1,53 @@
-import { useState } from 'react';
-import { downloadFile, getAdminToken } from '../../lib/api';
+import { useEffect, useState } from 'react';
+import { api, downloadFile, getAdminToken, type EventInfo } from '../../lib/api';
 import { NoEvent, PageHeader, useAdmin } from './AdminLayout';
+import { StatTile } from './dashboard/ui';
+import { Icons } from './kit';
+
+type Format = 'xlsx' | 'csv';
+
+const FORMATS: { id: Format; title: string; ext: string; text: string; icon: React.ReactNode }[] = [
+  { id: 'xlsx', title: 'Excel workbook', ext: '.xlsx', text: 'Best for sharing, sorting and filtering in Excel.', icon: Icons.sheet },
+  { id: 'csv', title: 'CSV file', ext: '.csv', text: 'Plain text for Google Sheets or any other tool.', icon: Icons.file },
+];
+
+const COLUMNS: { group: string; items: string[] }[] = [
+  { group: 'Student', items: ['Name', 'Phone', 'School/College', 'Class', 'Stream', 'Lunch', 'Coming From'] },
+  { group: 'Parent', items: ['Parent Name', 'Parent Phone'] },
+  { group: 'Seating', items: ['Status', 'Room', 'Team', 'Seat', 'Check-in Time'] },
+  { group: 'Registration', items: ['Source', 'Registration Type'] },
+];
 
 export default function Export() {
   const { event } = useAdmin();
-  const [downloading, setDownloading] = useState<'xlsx' | 'csv' | null>(null);
+  const [downloading, setDownloading] = useState<Format | null>(null);
+  const [done, setDone] = useState<Format | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [counts, setCounts] = useState<{ registered: number; seated: number } | null>(null);
+
+  // The selected event carries no counts, so read them from the events list.
+  useEffect(() => {
+    if (!event) return;
+    let live = true;
+    api<EventInfo[]>('/events').then((list) => {
+      const e = list.find((x) => x.id === event.id);
+      if (live && e) setCounts({ registered: e.participantCount ?? 0, seated: e.checkedInCount ?? 0 });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [event]);
 
   if (!event) return <NoEvent />;
 
   const token = getAdminToken();
+  const baseName = `${event.name.replace(/[^\w-]+/g, '_')}-${event.date}`;
 
-  const handleDownload = async (format: 'xlsx' | 'csv') => {
+  const handleDownload = async (format: Format) => {
     setDownloading(format);
+    setDone(null);
     setError(null);
     try {
-      await downloadFile(`/events/${event.id}/export?format=${format}`, `${event.name.replace(/[^\w-]+/g, '_')}-${event.date}.${format}`);
+      await downloadFile(`/events/${event.id}/export?format=${format}`, `${baseName}.${format}`);
+      setDone(format);
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to download file. Please verify you are logged in.');
     } finally {
@@ -25,104 +57,77 @@ export default function Export() {
 
   return (
     <div>
-      <PageHeader title="Export" subtitle={`Download all participants of “${event.name}” with their seat allocations.`} />
-      
+      <PageHeader title="Export" subtitle={`The full attendance and seating roster of “${event.name}”, one row per student.`} />
+
+      <dl className="mb-6 grid grid-cols-3 gap-2 sm:gap-3">
+        <StatTile label="Students" value={counts ? counts.registered : '…'} hint="Everyone registered for this event" />
+        <StatTile label="Checked in" value={counts ? counts.seated : '…'} hint="With room, team and seat" tone={counts?.seated ? 'good' : undefined} />
+        <StatTile label="Not arrived" value={counts ? Math.max(0, counts.registered - counts.seated) : '…'} hint="Included with status “not arrived”" />
+      </dl>
+
       {error && (
-        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">
-          ⚠️ {error}
+        <div className="mb-5 rounded-xl border border-niat-maroon/20 bg-niat-pink px-4 py-3 text-sm font-medium text-niat-maroon" role="alert">
+          {error}
         </div>
       )}
 
-      <div className="card">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-niat-maroon/10 text-niat-maroon">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-niat-text">Attendance & Seating Roster</h3>
-            <p className="text-xs text-niat-muted">Export clean spreadsheet with complete attendee check-in records</p>
-          </div>
-        </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {FORMATS.map((f) => {
+          const busy = downloading === f.id;
+          return (
+            <button key={f.id} type="button" onClick={() => handleDownload(f.id)} disabled={downloading !== null}
+              className="group flex w-full min-w-0 cursor-pointer items-start gap-4 rounded-2xl border border-niat-line bg-white p-4 text-left sm:p-5 shadow-[var(--shadow-card)] transition-[border-color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-niat-gold/50 enabled:hover:-translate-y-0.5 enabled:hover:border-niat-maroon/30 enabled:hover:shadow-[var(--shadow-soft)] disabled:cursor-wait disabled:opacity-70">
+              <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${f.id === 'xlsx' ? 'bg-niat-maroon text-white' : 'bg-niat-pink text-niat-maroon'}`}>{f.icon}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="text-base font-bold text-niat-text">{f.title}</span>
+                  <span className="rounded-md bg-stone-100 px-1.5 py-px font-mono text-[11px] text-niat-muted">{f.ext}</span>
+                </span>
+                <span className="mt-0.5 block text-sm text-niat-muted">{f.text}</span>
+                <span className="mt-2 block truncate font-mono text-[11.5px] text-niat-muted/80">{baseName}{f.ext}</span>
+              </span>
+              <span className="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full border border-niat-line text-niat-maroon transition-colors group-enabled:group-hover:bg-niat-maroon group-enabled:group-hover:text-white" aria-hidden="true">
+                {busy
+                  ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-niat-maroon/25 border-t-niat-maroon" />
+                  : done === f.id ? Icons.check : Icons.download}
+              </span>
+              <span className="sr-only" aria-live="polite">{busy ? `Preparing ${f.title}…` : done === f.id ? `${f.title} downloaded` : ''}</span>
+            </button>
+          );
+        })}
+      </div>
 
-        <p className="mt-4 text-sm leading-relaxed text-niat-muted">
-          Includes <strong>Name</strong>, <strong>Phone</strong>, <strong>Parent Name</strong>, <strong>Parent Phone</strong>, <strong>School/College</strong>, <strong>Class</strong>, <strong>Coming From</strong>, <strong>Source</strong>, <strong>Registration Type</strong>, <strong>Status</strong>, <strong>Room</strong>, <strong>Team</strong>, <strong>Seat</strong>, and <strong>Check-in Time</strong>.
-          Participants who have not yet checked in are included with their pre-assigned room or pending status.
+      <section className="card mt-6">
+        <h2 className="text-base font-bold text-niat-text">What's in the file</h2>
+        <p className="mt-0.5 text-sm text-niat-muted">
+          Students who haven't checked in are included too, with their status, so the file always matches the registration list.
         </p>
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => handleDownload('xlsx')}
-            disabled={downloading !== null}
-            className="btn-primary inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
-          >
-            {downloading === 'xlsx' ? (
-              <>
-                <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                <span>Generating Excel…</span>
-              </>
-            ) : (
-              <>
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                <span>Download Excel (.xlsx)</span>
-              </>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleDownload('csv')}
-            disabled={downloading !== null}
-            className="btn-secondary inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
-          >
-            {downloading === 'csv' ? (
-              <>
-                <svg className="h-4 w-4 animate-spin text-niat-maroon" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                <span>Generating CSV…</span>
-              </>
-            ) : (
-              <>
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                <span>Download CSV</span>
-              </>
-            )}
-          </button>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {COLUMNS.map((c) => (
+            <div key={c.group}>
+              <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-niat-maroon">{c.group}</h3>
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {c.items.map((i) => (
+                  <li key={i} className="rounded-lg border border-niat-line bg-niat-warm-white px-2 py-1 text-[12.5px] font-medium text-niat-text">{i}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
 
-        {/* Fallback direct download link for convenience */}
+        {/* Direct links for a browser that blocks the download button */}
         {token && (
-          <p className="mt-4 text-xs text-niat-muted/70">
-            Tip: You can also right-click and save directly via{' '}
-            <a
-              href={`/api/events/${event.id}/export?format=xlsx&token=${encodeURIComponent(token)}`}
-              className="underline hover:text-niat-maroon"
-              download
-            >
+          <p className="mt-5 border-t border-niat-line pt-3 text-xs text-niat-muted">
+            Download blocked?{' '}
+            <a href={`/api/events/${event.id}/export?format=xlsx&token=${encodeURIComponent(token)}`} className="font-semibold underline hover:text-niat-maroon" download>
               Excel direct link
-            </a>{' '}
-            or{' '}
-            <a
-              href={`/api/events/${event.id}/export?format=csv&token=${encodeURIComponent(token)}`}
-              className="underline hover:text-niat-maroon"
-              download
-            >
+            </a>{' · '}
+            <a href={`/api/events/${event.id}/export?format=csv&token=${encodeURIComponent(token)}`} className="font-semibold underline hover:text-niat-maroon" download>
               CSV direct link
-            </a>.
+            </a>
           </p>
         )}
-      </div>
+      </section>
     </div>
   );
 }

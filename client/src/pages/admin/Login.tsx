@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import logo from '../../assets/niat-logo.png';
+import { AuthHeading, AuthShell } from './AuthFrame';
 import { ApiError, loginAdmin, type AdminUser } from '../../lib/api';
 
 export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (user: AdminUser) => void }) {
@@ -34,26 +34,12 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (user:
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F8F9FA] px-4 py-12">
+    <AuthShell>
       <div className="w-full max-w-md animate-scale-in">
-        {/* Brand header */}
-        <div className="text-center">
-          <Link to="/" className="inline-block transition-transform hover:scale-102">
-            <img src={logo} alt="NIAT" className="mx-auto h-12 w-auto object-contain" />
-          </Link>
-          <div className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.22em] text-niat-maroon">
-            NIAT AI BOOTCAMP
-          </div>
-          <h1 className="mt-1 text-2xl font-black tracking-tight text-niat-text sm:text-3xl">
-            Command Center Login
-          </h1>
-          <p className="mt-1 text-xs text-niat-muted">
-            Sign in with your admin account to manage your location's events.
-          </p>
-        </div>
+        <AuthHeading title="Sign in" subtitle="Use your admin account to manage your location's events." />
 
         {/* Card */}
-        <div className="mt-7 rounded-2xl border border-niat-line bg-white p-7 shadow-xs">
+        <div className="mt-7 rounded-2xl border border-niat-line bg-white p-6 shadow-[var(--shadow-card)] sm:p-7">
           {error && (
             <div
               role="alert"
@@ -123,7 +109,7 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (user:
                 </>
               ) : (
                 <>
-                  <span>Sign In to Command Center</span>
+                  <span>Sign in</span>
                   <span aria-hidden="true">&rarr;</span>
                 </>
               )}
@@ -147,6 +133,6 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess?: (user:
           </Link>
         </div>
       </div>
-    </div>
+    </AuthShell>
   );
 }

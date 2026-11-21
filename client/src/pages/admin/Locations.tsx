@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api, type LocationInfo } from '../../lib/api';
 import { PageHeader, useAdmin } from './AdminLayout';
+import { Icons } from './kit';
 
 const slugify = (text: string) => text.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '')
   .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
@@ -106,37 +107,52 @@ export default function Locations() {
         </form>
       )}
 
-      <div className="card overflow-x-auto p-0">
-        <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="border-b border-niat-line bg-niat-warm-white text-niat-muted">
-            <tr>
-              <th className="px-4 py-3">Location</th><th className="px-3">Link name</th><th className="px-3 text-right">Events</th>
-              <th className="px-3 text-right">Admins</th><th className="px-3">Status</th><th className="px-3"><span className="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {locations?.map((l) => (
-              <tr key={l.id} className="border-b border-niat-line/60">
-                <td className="px-4 py-3">
-                  <div className="font-semibold">{l.name}</div>
-                  <div className="text-xs text-niat-muted">{[l.city, l.state].filter(Boolean).join(', ') || '—'}</div>
-                </td>
-                <td className="px-3 font-mono text-xs">/{l.slug}</td>
-                <td className="px-3 text-right tabular-nums">{l.eventCount}{l.liveCount ? <span className="ml-1 text-xs font-bold text-emerald-700">({l.liveCount} live)</span> : null}</td>
-                <td className="px-3 text-right tabular-nums">{l.adminCount}</td>
-                <td className="px-3">
-                  {l.isActive
-                    ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Active</span>
-                    : <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs font-semibold text-niat-muted">Disabled</span>}
-                </td>
-                <td className="px-3 text-right"><button className="font-semibold text-niat-maroon hover:underline" onClick={() => edit(l)}>Edit</button></td>
-              </tr>
-            ))}
-            {locations === null && <tr><td colSpan={6} className="px-4 py-8 text-center text-niat-muted">Loading…</td></tr>}
-            {locations?.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-niat-muted">No locations yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      {locations === null ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-busy="true">
+          {[0, 1, 2].map((i) => <div key={i} className="h-40 animate-pulse rounded-2xl bg-white shadow-[var(--shadow-card)]" />)}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {locations.map((l) => (
+            <article key={l.id}
+              className={`flex flex-col rounded-2xl border bg-white p-4 shadow-[var(--shadow-card)] ${l.isActive ? 'border-niat-line' : 'border-dashed border-stone-300 opacity-80'}`}>
+              <div className="flex items-start gap-3">
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-lg font-extrabold ${l.isActive ? 'bg-niat-maroon text-white' : 'bg-stone-200 text-stone-600'}`} aria-hidden="true">
+                  {l.name.trim()[0]?.toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="truncate font-bold text-niat-text">{l.name}</h3>
+                    {l.liveCount
+                      ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />Live</span>
+                      : l.isActive
+                        ? <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-semibold text-niat-muted">Active</span>
+                        : <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-semibold text-niat-muted">Disabled</span>}
+                  </div>
+                  <p className="truncate text-[13px] text-niat-muted">{[l.city, l.state].filter(Boolean).join(', ') || 'No city set'}</p>
+                  <code className="mt-1 inline-block rounded-md bg-niat-warm-white px-1.5 py-0.5 font-mono text-[11.5px] text-niat-muted">/{l.slug}</code>
+                </div>
+              </div>
+              <dl className="mt-4 grid grid-cols-3 divide-x divide-niat-line rounded-xl border border-niat-line bg-niat-warm-white/60 text-center">
+                {([['Events', l.eventCount ?? 0], ['Live', l.liveCount ?? 0], ['Admins', l.adminCount ?? 0]] as const).map(([k, v]) => (
+                  <div key={k} className="py-2">
+                    <dd className="text-lg font-bold tabular-nums text-niat-text">{v}</dd>
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-niat-muted">{k}</dt>
+                  </div>
+                ))}
+              </dl>
+              <div className="mt-3 flex justify-end">
+                <button className="btn-secondary py-1.5 text-sm" onClick={() => edit(l)}>Edit</button>
+              </div>
+            </article>
+          ))}
+          <button type="button" onClick={() => edit()}
+            className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-niat-line text-sm font-semibold text-niat-muted transition-colors hover:border-niat-maroon/40 hover:bg-niat-pink/30 hover:text-niat-maroon">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm">{Icons.plus}</span>
+            Add a location
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,40 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, type EventInfo } from '../../lib/api';
 import { downloadCsv, FIELDS, guessMapping, normalizePhone, parseFile, type FieldKey, type ParsedSheet } from '../../lib/parseSheet';
 import { NoEvent, PageHeader, useAdmin } from './AdminLayout';
+import { EmptyState, Icons } from './kit';
+
+/** A blank file with the right headings, so the team fills the list in a shape the import reads first time. */
+function downloadTemplate() {
+  const header = FIELDS.map((f) => f.label).join(',');
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + header + '\r\n'], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'participants-template.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+const STEPS = ['Choose a file', 'Match the columns', 'Import'];
+
+function Steps({ current }: { current: number }) {
+  return (
+    <ol className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm sm:gap-x-2" aria-label="Import steps">
+      {STEPS.map((label, i) => {
+        const state = i < current ? 'done' : i === current ? 'now' : 'next';
+        return (
+          <li key={label} className="flex items-center gap-2" aria-current={state === 'now' ? 'step' : undefined}>
+            <span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-bold ${
+              state === 'done' ? 'bg-emerald-600 text-white' : state === 'now' ? 'bg-niat-maroon text-white' : 'bg-stone-200 text-niat-muted'}`}>
+              {state === 'done' ? '✓' : i + 1}
+            </span>
+            <span className={state === 'next' ? 'text-niat-muted' : 'font-semibold text-niat-text'}>{label}</span>
+            {i < STEPS.length - 1 && <span className="mx-1 hidden h-px w-8 bg-niat-line sm:block" aria-hidden="true" />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 interface ImportSummary {
   totalRows: number;
@@ -25,6 +59,7 @@ export default function Import() {
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [participantCount, setParticipantCount] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const [importsKey, setImportsKey] = useState(0);
   const loadCount = () => {
@@ -100,28 +135,48 @@ export default function Import() {
 
   if (!event) return <NoEvent />;
   if (event.status === 'completed') {
-    return <div><PageHeader title="Import Participants" /><div className="card text-niat-muted">This event is completed. Create a new event to import participants.</div></div>;
+    return (
+      <div>
+        <PageHeader title="Import Participants" />
+        <EmptyState icon={Icons.upload} title="This event is completed">Create a new event to import participants for it.</EmptyState>
+      </div>
+    );
   }
 
   return (
     <div>
       <PageHeader
         title="Import Participants"
-        subtitle={`${event.name} · ${participantCount ?? '…'} participants registered`}
+        subtitle={<>{event.name} · <b className="font-semibold text-niat-text tabular-nums">{participantCount ?? '…'}</b> participants registered</>}
+        actions={<button type="button" className="btn-secondary" onClick={downloadTemplate}>{Icons.download} Blank template</button>}
       />
+
+      <Steps current={summary ? 3 : sheet ? 1 : 0} />
 
       <div className="card">
         <label
-          className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-niat-line p-10 text-center hover:border-niat-maroon/50 hover:bg-niat-cream/40"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files[0]); }}
+          className={`group flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors ${
+            dragging ? 'border-niat-maroon bg-niat-pink/50' : 'border-niat-line bg-niat-warm-white/50 hover:border-niat-maroon/50 hover:bg-niat-cream/40'}`}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); onFile(e.dataTransfer.files[0]); }}
         >
-          <span className="text-4xl">📄</span>
-          <span className="mt-2 text-lg font-semibold">Drop an Excel or CSV file here, or click to choose</span>
-          <span className="mt-1 text-sm text-niat-muted">Needs columns for Name, Phone, School/College and Source (any order). Class, Parent Name, Parent Phone and Area are optional.</span>
-          <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
+          <span className={`grid h-14 w-14 place-items-center rounded-2xl bg-white text-niat-maroon shadow-sm transition-transform duration-200 [&>svg]:h-7 [&>svg]:w-7 ${dragging ? '-translate-y-1' : 'group-hover:-translate-y-0.5'}`}>
+            {Icons.upload}
+          </span>
+          <span className="mt-4 text-lg font-bold text-niat-text">{dragging ? 'Drop it here' : file && sheet ? `Replace ${file.name}` : 'Drop an Excel or CSV file here'}</span>
+          <span className="mt-1 text-sm text-niat-muted">or <span className="font-semibold text-niat-maroon underline-offset-2 group-hover:underline">choose a file</span> · .xlsx, .xls or .csv</span>
+          <span className="mt-5 flex flex-wrap justify-center gap-1.5">
+            {FIELDS.map((f) => (
+              <span key={f.key} className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${f.required ? 'bg-niat-maroon/10 text-niat-maroon' : 'bg-stone-100 text-niat-muted'}`}>
+                {f.label}{f.required ? '' : ' · optional'}
+              </span>
+            ))}
+          </span>
+          <span className="mt-2 text-xs text-niat-muted">Columns can be in any order, with any heading. You match them in the next step.</span>
+          <input type="file" accept=".xlsx,.xls,.csv" className="sr-only" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
         </label>
-        {error && <p className="mt-4 rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}
+        {error && <p className="mt-4 rounded-lg border border-niat-maroon/20 bg-niat-pink px-3 py-2.5 text-sm font-medium text-niat-maroon" role="alert">{error}</p>}
       </div>
 
       {sheet && mapping && analysed && (
@@ -129,7 +184,7 @@ export default function Import() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold">{file?.name}</h2>
-              <p className="mt-1 text-3xl font-bold">{valid.length} students detected</p>
+              <p className="mt-1 text-3xl font-bold tabular-nums">{valid.length} <span className="text-lg font-semibold text-niat-muted">students ready</span></p>
               {problems.length > 0 && <p className="mt-1 text-amber-700">{problems.length} row{problems.length > 1 ? 's' : ''} need attention (listed below — they will not be imported)</p>}
             </div>
             <button className="btn-primary px-6 py-3 text-lg" disabled={busy || valid.length === 0 || missingRequired.length > 0} onClick={doImport}>

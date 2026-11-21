@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, formatDate } from '../../lib/api';
+import { StatTile } from './dashboard/ui';
 import { PageHeader, statusBadge, useAdmin } from './AdminLayout';
+import { DateTile, Icons } from './kit';
 
 interface OverviewEvent {
   id: number;
@@ -107,9 +109,12 @@ export default function Overview() {
       </div>
 
       <section className="mb-8">
-        <h2 className="mb-3 text-lg font-bold">Live now</h2>
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-[0.12em] text-niat-muted">Live now</h2>
         {live.length === 0 ? (
-          <div className="card text-sm text-niat-muted">No event is live at the moment.</div>
+          <div className="flex items-center gap-3 rounded-2xl border border-dashed border-niat-line bg-white/60 px-4 py-4 text-sm text-niat-muted">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-stone-100 text-niat-muted">{Icons.calendar}</span>
+            No event is live at the moment. Live events appear here with their seats filling in real time.
+          </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {live.map((e) => <LiveCard key={e.id} event={e} onOpen={(to) => open(e.id, to)} />)}
@@ -118,7 +123,7 @@ export default function Overview() {
       </section>
 
       <section className="mb-8">
-        <h2 className="mb-3 text-lg font-bold">Locations</h2>
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-[0.12em] text-niat-muted">Locations</h2>
         <div className="card overflow-x-auto p-0">
           <table className="w-full min-w-[620px] text-left text-sm">
             <thead className="border-b border-niat-line bg-niat-warm-white text-niat-muted">
@@ -166,13 +171,7 @@ export default function Overview() {
 }
 
 function Stat({ label, value, note, tone }: { label: string; value: number; note?: string; tone?: 'alert' }) {
-  return (
-    <div className={`card p-4 ${tone === 'alert' ? 'border-niat-maroon/30 bg-niat-pink/50' : ''}`}>
-      <div className="text-xs font-bold uppercase tracking-wider text-niat-muted">{label}</div>
-      <div className={`mt-1 text-3xl font-black tabular-nums ${tone === 'alert' ? 'text-niat-maroon' : 'text-niat-text'}`}>{value}</div>
-      {note && <div className="text-xs text-niat-muted">{note}</div>}
-    </div>
-  );
+  return <StatTile label={label} value={value.toLocaleString('en-IN')} hint={note} tone={tone} />;
 }
 
 function LiveCard({ event: e, onOpen }: { event: OverviewEvent; onOpen: (to?: string) => void }) {
@@ -183,7 +182,7 @@ function LiveCard({ event: e, onOpen }: { event: OverviewEvent; onOpen: (to?: st
     <div className="card flex flex-col p-5">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-xs font-bold uppercase tracking-wider text-niat-maroon">📍 {e.locationName ?? 'No location'}</div>
+          <div className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-niat-maroon [&>svg]:h-3.5 [&>svg]:w-3.5">{Icons.pin} {e.locationName ?? 'No location'}</div>
           <div className="mt-0.5 truncate font-bold">{e.name}</div>
           <div className="text-xs text-niat-muted">{formatDate(e.date)}{e.time ? ` · ${e.time}` : ''}</div>
         </div>
@@ -213,10 +212,10 @@ function LiveCard({ event: e, onOpen }: { event: OverviewEvent; onOpen: (to?: st
         </p>
       )}
 
-      <div className="mt-4 flex flex-wrap gap-2 pt-1">
-        <button className="btn-primary py-1.5 text-sm" onClick={() => onOpen('/admin')}>Dashboard</button>
+      <div className="mt-4 flex items-center gap-2 border-t border-niat-line/70 pt-3">
+        <button className="btn-primary flex-1 py-1.5 text-sm" onClick={() => onOpen('/admin')}>Dashboard</button>
         <button className="btn-secondary py-1.5 text-sm" onClick={() => onOpen('/admin/teams')}>Rooms</button>
-        {publicPath && <a className="btn-secondary py-1.5 text-sm" href={publicPath} target="_blank" rel="noopener noreferrer">Student page ↗</a>}
+        {publicPath && <a className="btn-secondary px-3 py-1.5 text-sm" href={publicPath} target="_blank" rel="noopener noreferrer" title="Open the student page">Student ↗</a>}
       </div>
     </div>
   );
@@ -240,21 +239,24 @@ function EventList({ title, events, empty, onOpen, showResults }: {
 }) {
   return (
     <section>
-      <h2 className="mb-3 text-lg font-bold">{title}</h2>
+      <h2 className="mb-3 text-sm font-bold uppercase tracking-[0.12em] text-niat-muted">{title}</h2>
       <div className="card divide-y divide-niat-line/60 p-0">
         {events.slice(0, 12).map((e) => (
           <button key={e.id} onClick={() => onOpen(e.id)}
-            className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left hover:bg-niat-warm-white">
-            <div className="min-w-0">
-              <div className="truncate font-semibold">{e.name}</div>
-              <div className="text-xs text-niat-muted">{e.locationName ?? '—'} · {formatDate(e.date)}</div>
+            className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-niat-warm-white">
+            <div className="flex min-w-0 items-center gap-3">
+              <DateTile date={e.date} tone={showResults ? 'muted' : 'default'} />
+              <div className="min-w-0">
+                <div className="truncate font-semibold">{e.name}</div>
+                <div className="text-xs text-niat-muted">{e.locationName ?? '—'}{e.time ? ` · ${e.time}` : ''}</div>
+              </div>
             </div>
             {showResults
               ? <span className="shrink-0 text-right text-xs text-niat-muted"><strong className="text-sm text-niat-text tabular-nums">{e.seated}</strong> seated<br />{e.walkIns} walk-ins</span>
               : <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[e.status]}`}>{e.status}</span>}
           </button>
         ))}
-        {events.length === 0 && <p className="px-4 py-6 text-center text-sm text-niat-muted">{empty}</p>}
+        {events.length === 0 && <p className="px-4 py-8 text-center text-sm text-niat-muted">{empty}</p>}
       </div>
     </section>
   );

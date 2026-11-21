@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api, type LocationInfo } from '../../lib/api';
 import { PageHeader, useAdmin } from './AdminLayout';
+import { StatTile } from './dashboard/ui';
+import { Avatar, Icons } from './kit';
 
 interface AdminRow {
   id: number;
@@ -66,12 +68,27 @@ export default function Admins() {
         <p className={`mb-4 text-sm font-semibold ${message.ok ? 'text-emerald-700' : 'text-niat-maroon'}`} role={message.ok ? 'status' : 'alert'}>{message.text}</p>
       )}
 
+      {admins && (
+        <dl className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatTile label="Admins" value={others.filter((a) => a.status === 'approved').length} hint="Can sign in" />
+          <StatTile label="Waiting for approval" value={pending.length} hint={pending.length ? 'Needs your decision' : 'Nothing waiting'} tone={pending.length ? 'warn' : undefined} />
+          <StatTile label="Super admins" value={others.filter((a) => a.role === 'super_admin').length} hint="See every location" />
+          <StatTile label="Locations covered" value={`${new Set(others.flatMap((a) => a.locations.map((l) => l.id))).size} / ${locations.length}`} hint="Have a location admin" />
+        </dl>
+      )}
+
       <section className="mb-8">
-        <h2 className="mb-3 text-lg font-bold">Waiting for approval {pending.length > 0 && <span className="text-niat-maroon">({pending.length})</span>}</h2>
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.12em] text-niat-muted">
+          Waiting for approval
+          <span className={`rounded-full px-2 py-px text-[11px] tracking-normal ${pending.length ? 'bg-niat-maroon text-white' : 'bg-stone-200/70 text-niat-muted'}`}>{pending.length}</span>
+        </h2>
         {admins === null ? (
-          <div className="card text-niat-muted">Loading…</div>
+          <div className="h-28 animate-pulse rounded-2xl bg-white shadow-[var(--shadow-card)]" />
         ) : pending.length === 0 ? (
-          <div className="card text-sm text-niat-muted">No pending requests. New requests appear here when someone uses “Request access” on the sign-in page.</div>
+          <div className="flex items-center gap-3 rounded-2xl border border-dashed border-niat-line bg-white/60 px-4 py-4 text-sm text-niat-muted">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">{Icons.check}</span>
+            <span><b className="text-niat-text">All caught up.</b> New requests appear here when someone uses “Request access” on the sign-in page.</span>
+          </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             {pending.map((a) => <PendingCard key={a.id} admin={a} locations={locations} onDecide={update} />)}
@@ -80,7 +97,7 @@ export default function Admins() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-bold">All admins</h2>
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-[0.12em] text-niat-muted">All admins</h2>
         <div className="card overflow-x-auto p-0">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="border-b border-niat-line bg-niat-warm-white text-niat-muted">
@@ -131,11 +148,14 @@ function PendingCard({ admin, locations, onDecide }: { admin: AdminRow; location
     setBusy(false);
   };
   return (
-    <div className="card p-5">
+    <div className="card border-amber-300/70 p-5">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-bold">{admin.name || '—'}</div>
-          <div className="truncate text-sm text-niat-muted">{admin.email}</div>
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={admin.name || admin.email} size="lg" />
+          <div className="min-w-0">
+            <div className="font-bold">{admin.name || '—'}</div>
+            <div className="truncate text-sm text-niat-muted">{admin.email}</div>
+          </div>
         </div>
         <span className="shrink-0 text-xs text-niat-muted">{when(admin.createdAt)}</span>
       </div>
@@ -166,10 +186,19 @@ function AdminTableRow({ admin, self, locations, onUpdate }: { admin: AdminRow; 
   return (
     <tr className="border-b border-niat-line/60 align-top">
       <td className="px-4 py-3">
-        <div className="font-semibold">{admin.name || '—'}{self && <span className="ml-1.5 text-xs font-normal text-niat-muted">(you)</span>}</div>
-        <div className="text-xs text-niat-muted">{admin.email}</div>
+        <div className="flex items-center gap-3">
+          <Avatar name={label} />
+          <div className="min-w-0">
+            <div className="font-semibold">{admin.name || '—'}{self && <span className="ml-1.5 rounded-full bg-niat-cream px-1.5 py-px text-[10.5px] font-bold text-[#7A4B00]">You</span>}</div>
+            <div className="text-xs text-niat-muted">{admin.email}</div>
+          </div>
+        </div>
       </td>
-      <td className="px-3 py-3">{admin.role === 'super_admin' ? <strong className="text-niat-maroon">Super admin</strong> : 'Location admin'}</td>
+      <td className="px-3 py-3">
+        {admin.role === 'super_admin'
+          ? <span className="inline-flex items-center gap-1 rounded-full bg-niat-maroon px-2 py-0.5 text-xs font-bold text-white [&>svg]:h-3 [&>svg]:w-3">{Icons.shield} Super admin</span>
+          : <span className="inline-flex rounded-full bg-stone-100 px-2 py-0.5 text-xs font-semibold text-stone-700">Location admin</span>}
+      </td>
       <td className="px-3 py-3">
         {admin.role === 'super_admin' ? (
           <span className="text-niat-muted">All locations</span>

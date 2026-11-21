@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { NavLink, Outlet, useOutletContext } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import logo from '../../assets/niat-logo.png';
 import { api, checkAdminAuth, formatDate, logoutAdmin, type AdminUser, type EventInfo } from '../../lib/api';
 import ChangePassword from './ChangePassword';
+import { EmptyState, Icons } from './kit';
 import AdminLogin from './Login';
 
 export interface AdminContext {
@@ -15,6 +16,21 @@ export interface AdminContext {
 }
 
 export const useAdmin = () => useOutletContext<AdminContext>();
+
+/** The NIAT shield, cut from the full logo, with the product name beside it. */
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className={`block shrink-0 overflow-hidden ${compact ? 'h-8 w-[25px]' : 'h-10 w-[31px]'}`}>
+        <img src={logo} alt="NIAT" className="block h-full w-auto max-w-none" />
+      </span>
+      <span className="min-w-0 leading-tight">
+        <span className={`block font-extrabold tracking-tight text-niat-text ${compact ? 'text-sm' : 'text-[15px]'}`}>AI Bootcamp</span>
+        <span className="block text-[10.5px] font-bold uppercase tracking-[0.16em] text-niat-maroon">Admin console</span>
+      </span>
+    </div>
+  );
+}
 
 const STORAGE_KEY = 'admin.selectedEventId';
 
@@ -37,14 +53,14 @@ interface NavSection {
 
 const navSections: NavSection[] = [
   {
-    title: 'EVENT',
+    title: 'Event',
     items: [
       {
         to: '/admin',
         label: 'Dashboard',
         end: true,
         icon: (
-          <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="3" width="7" height="9" rx="1.5" />
             <rect x="14" y="3" width="7" height="5" rx="1.5" />
             <rect x="14" y="12" width="7" height="9" rx="1.5" />
@@ -56,7 +72,7 @@ const navSections: NavSection[] = [
         to: '/admin/setup',
         label: 'Event Setup',
         icon: (
-          <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <circle cx="12" cy="12" r="3" />
           </svg>
@@ -66,7 +82,7 @@ const navSections: NavSection[] = [
         to: '/admin/participants',
         label: 'Participants',
         icon: (
-          <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
           </svg>
         ),
@@ -75,7 +91,7 @@ const navSections: NavSection[] = [
         to: '/admin/import',
         label: 'Import Participants',
         icon: (
-          <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
         ),
@@ -83,13 +99,13 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    title: 'OPERATIONS',
+    title: 'Operations',
     items: [
       {
         to: '/admin/teams',
         label: 'Rooms & Teams',
         icon: (
-          <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
         ),
@@ -98,7 +114,7 @@ const navSections: NavSection[] = [
         to: '/admin/projects',
         label: 'Projects',
         icon: (
-          <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 21h8m-4-4v4m-5-17h10v5a5 5 0 01-10 0V4zM7 6H4v1a3 3 0 003 3m10-4h3v1a3 3 0 01-3 3" />
           </svg>
         ),
@@ -107,7 +123,7 @@ const navSections: NavSection[] = [
         to: '/admin/export',
         label: 'Export',
         icon: (
-          <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
         ),
@@ -115,13 +131,13 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    title: 'EVENTS',
+    title: 'Events',
     items: [
       {
         to: '/admin/events',
         label: 'All Events',
         icon: (
-          <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         ),
@@ -131,18 +147,18 @@ const navSections: NavSection[] = [
 ];
 
 const platformIcon = (
-  <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+  <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
     <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h4l3 8 4-16 3 8h4" />
   </svg>
 );
 const locationIcon = (
-  <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+  <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7-6.2-7-11.5A7 7 0 0112 2.5a7 7 0 017 7C19 14.8 12 21 12 21z" />
     <circle cx="12" cy="9.5" r="2.5" />
   </svg>
 );
 const adminsIcon = (
-  <svg className="h-4.5 w-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+  <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z" />
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
   </svg>
@@ -155,10 +171,11 @@ function platformSection(user: AdminUser, pendingAdmins: number): NavSection {
     items.push({ to: '/admin/locations', label: 'Locations', icon: locationIcon });
     items.push({ to: '/admin/admins', label: 'Admins', icon: adminsIcon, badge: pendingAdmins || undefined });
   }
-  return { title: 'PLATFORM', items };
+  return { title: 'Platform', items };
 }
 
 export default function AdminLayout() {
+  const { pathname } = useLocation();
   const [user, setUser] = useState<AdminUser | null>(null);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
   const [pendingAdmins, setPendingAdmins] = useState(0);
@@ -237,8 +254,9 @@ export default function AdminLayout() {
 
   if (authChecking) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F8F9FA] text-xs font-semibold text-niat-muted">
-        Verifying administrator session…
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#F7F6F3] text-xs font-semibold text-niat-muted">
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-niat-maroon/20 border-t-niat-maroon" aria-hidden="true" />
+        Checking your session…
       </div>
     );
   }
@@ -252,58 +270,58 @@ export default function AdminLayout() {
     : user.locations.map((l) => l.name).join(', ') || 'Location Admin';
 
   return (
-    <div className="flex min-h-screen bg-[#F8F9FA]">
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-niat-line bg-white shadow-2xs md:flex">
-        <div className="border-b border-niat-line px-5 pb-4 pt-5">
-          {/* The logo is a wide wordmark that already spells out NIAT, so it gets the full width to stay legible. */}
-          <img src={logo} alt="NIAT – NxtWave of Innovation in Advanced Technologies" className="block h-auto w-full max-w-52" />
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <span className="text-sm font-bold text-niat-text">AI Bootcamp</span>
-            <span className="rounded-md bg-niat-pink px-2 py-0.5 text-xs font-semibold text-niat-maroon">Admin</span>
-          </div>
+    <div className="flex min-h-screen bg-[#F7F6F3]">
+      <a href="#admin-main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-niat-maroon focus:shadow-lg">
+        Skip to content
+      </a>
+      {/* Laptop-first sidebar: everything fits in 768px of height without scrolling. */}
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-niat-line bg-white md:flex">
+        <div className="px-4 pb-4 pt-5">
+          <Brand />
+        </div>
 
+        {/* The current event doubles as the event switcher. */}
+        <div className="px-3 pb-2">
           {event ? (
-            <div className="mt-4 rounded-xl border border-niat-line/80 bg-niat-warm-white px-3 py-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-semibold text-niat-text" title={event.name}>{event.name}</span>
-                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${statusBadge[event.status]}`}>
+            <NavLink to="/admin/events" title="Switch event"
+              className="group block rounded-xl border border-niat-line bg-niat-warm-white px-3 py-2 transition-colors hover:border-niat-maroon/30 hover:bg-niat-pink/40">
+              <div className="flex items-start justify-between gap-2">
+                <span className="line-clamp-2 text-[13px] font-semibold leading-snug text-niat-text" title={event.name}>{event.name}</span>
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[11px] font-semibold ${statusBadge[event.status]}`}>
                   {event.status === 'active' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" aria-hidden="true" />}
-                  {event.status === 'active' ? 'Live' : event.status === 'draft' ? 'Draft' : 'Completed'}
+                  {event.status === 'active' ? 'Live' : event.status === 'draft' ? 'Draft' : 'Done'}
                 </span>
               </div>
-              <div className="mt-1 truncate text-xs text-niat-muted">
-                {event.locationName && <>{event.locationName} · </>}{formatDate(event.date)}
+              <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-niat-muted">
+                <span className="truncate">{event.locationName && <>{event.locationName} · </>}{formatDate(event.date)}</span>
+                <span className="shrink-0 font-semibold text-niat-maroon opacity-0 transition-opacity group-hover:opacity-100">Switch</span>
               </div>
-            </div>
+            </NavLink>
           ) : loaded ? (
-            <div className="mt-4 text-sm text-niat-muted">No event selected</div>
+            <NavLink to="/admin/setup" className="block rounded-xl border border-dashed border-niat-line px-3 py-2 text-[13px] text-niat-muted hover:text-niat-maroon">
+              No event selected · Create one
+            </NavLink>
           ) : null}
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+        <nav className="flex-1 space-y-3 overflow-y-auto px-3 pb-3 pt-1" aria-label="Admin">
           {sections.map((section) => (
             <div key={section.title}>
-              <div className="px-3 pb-1.5 text-xs font-semibold uppercase tracking-wider text-niat-muted/80">
-                {section.title}
-              </div>
-              <div className="space-y-0.5">
+              <div className="px-2.5 pb-1 text-[10.5px] font-bold uppercase tracking-[0.12em] text-niat-muted/70">{section.title}</div>
+              <div className="space-y-px">
                 {section.items.map((n) => (
-                  <NavLink
-                    key={n.to}
-                    to={n.to}
-                    end={n.end}
+                  <NavLink key={n.to} to={n.to} end={n.end}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                      `relative flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] transition-colors ${
                         isActive
-                          ? 'border-niat-maroon/15 bg-niat-pink/70 font-semibold text-niat-maroon'
-                          : 'border-transparent text-niat-muted hover:bg-niat-cream/40 hover:text-niat-text'
+                          ? 'bg-niat-pink/80 font-semibold text-niat-maroon before:absolute before:inset-y-1.5 before:-left-3 before:w-[3px] before:rounded-r before:bg-niat-maroon'
+                          : 'font-medium text-niat-muted hover:bg-stone-100 hover:text-niat-text'
                       }`
-                    }
-                  >
+                    }>
                     {n.icon}
-                    <span className="flex-1">{n.label}</span>
+                    <span className="flex-1 truncate">{n.label}</span>
                     {n.badge ? (
-                      <span className="rounded-full bg-niat-maroon px-1.5 py-0.5 text-xs font-bold leading-none text-white" aria-label={`${n.badge} pending`}>
+                      <span className="rounded-full bg-niat-maroon px-1.5 py-0.5 text-[11px] font-bold leading-none text-white" aria-label={`${n.badge} pending`}>
                         {n.badge}
                       </span>
                     ) : null}
@@ -314,48 +332,58 @@ export default function AdminLayout() {
           ))}
         </nav>
 
-        <div className="border-t border-niat-line p-3 bg-white space-y-2">
-          <div className="flex items-center justify-between gap-2 rounded-xl border border-niat-line/70 bg-niat-warm-white px-3 py-2">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-niat-text" title={user.email}>{user.name || user.email}</div>
-              <div className="truncate text-xs text-niat-muted" title={roleLabel}>{roleLabel}</div>
-            </div>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="shrink-0 cursor-pointer rounded-lg border border-niat-line bg-white px-2.5 py-1 text-xs font-semibold text-niat-muted transition-colors hover:border-niat-maroon/30 hover:bg-niat-pink hover:text-niat-maroon"
-              title="Sign out of admin session"
-            >
-              Sign Out
-            </button>
-          </div>
-
+        <div className="space-y-2 border-t border-niat-line p-3">
           {event?.publicPath && event.status !== 'completed' && (
             <div className="grid grid-cols-2 gap-1.5">
               <a href={event.publicPath} target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1 rounded-xl border border-niat-maroon/25 bg-white px-2 py-2 text-xs font-semibold text-niat-maroon hover:bg-niat-pink">
+                className="flex h-8 items-center justify-center gap-1 rounded-lg border border-niat-line bg-white text-xs font-semibold text-niat-text hover:border-niat-maroon/30 hover:text-niat-maroon">
                 Student page <span aria-hidden="true">↗</span>
               </a>
               <a href={`/gate/${event.id}`} target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1 rounded-xl bg-niat-maroon px-2 py-2 text-xs font-semibold text-white shadow-xs hover:bg-niat-maroon-dark">
+                className="flex h-8 items-center justify-center gap-1 rounded-lg bg-niat-maroon text-xs font-semibold text-white hover:bg-niat-maroon-dark">
                 Gate kiosk <span aria-hidden="true">↗</span>
               </a>
             </div>
           )}
+          <div className="flex items-center gap-2.5 px-1">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-niat-pink text-xs font-bold text-niat-maroon" aria-hidden="true">
+              {(user.name || user.email).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('')}
+            </span>
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="truncate text-[13px] font-semibold text-niat-text" title={user.email}>{user.name || user.email}</div>
+              <div className="truncate text-[11.5px] text-niat-muted" title={roleLabel}>{roleLabel}</div>
+            </div>
+            <button type="button" onClick={handleSignOut} title="Sign out" aria-label="Sign out"
+              className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-niat-muted transition-colors hover:bg-niat-pink hover:text-niat-maroon">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" />
+              </svg>
+            </button>
+          </div>
         </div>
       </aside>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between border-b border-niat-line bg-white px-4 py-2.5 md:hidden">
-          <div className="flex gap-2 overflow-x-auto">
+        <div className="sticky top-0 z-30 border-b border-niat-line bg-white/95 backdrop-blur md:hidden">
+          <div className="flex items-center justify-between px-4 pb-1.5 pt-2.5">
+            <Brand compact />
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="shrink-0 cursor-pointer rounded-lg border border-niat-line bg-white px-2.5 py-1 text-xs font-bold text-niat-muted hover:text-niat-maroon"
+            >
+              Sign out
+            </button>
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto px-4 pb-2.5 [scrollbar-width:none]">
             {sections.flatMap((s) => s.items).map((n) => (
               <NavLink
                 key={n.to}
                 to={n.to}
                 end={n.end}
                 className={({ isActive }) =>
-                  `whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
-                    isActive ? 'bg-niat-pink text-niat-maroon' : 'text-niat-muted'
+                  `whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                    isActive ? 'border-niat-maroon bg-niat-maroon text-white' : 'border-niat-line bg-white text-niat-muted'
                   }`
                 }
               >
@@ -363,21 +391,16 @@ export default function AdminLayout() {
               </NavLink>
             ))}
           </div>
-
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="ml-2 shrink-0 cursor-pointer rounded-lg border border-niat-line bg-white px-2.5 py-1 text-xs font-bold text-niat-muted hover:text-niat-maroon"
-          >
-            Sign Out
-          </button>
         </div>
 
-        <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+        <main id="admin-main" tabIndex={-1} className="mx-auto w-full max-w-[1440px] px-4 py-5 outline-none sm:px-6 lg:px-8 lg:py-6">
           {loaded ? (
-            <Outlet context={{ event, reload, selectEvent, user, refreshPending } satisfies AdminContext} />
+            // Opacity only: a transform here would trap the pages' fixed drawers and dialogs.
+            <div key={pathname} className="animate-fade-in">
+              <Outlet context={{ event, reload, selectEvent, user, refreshPending } satisfies AdminContext} />
+            </div>
           ) : (
-            <div className="p-8 text-center text-niat-muted">Loading command center…</div>
+            <AdminSkeleton />
           )}
         </main>
       </div>
@@ -389,33 +412,52 @@ export function PageHeader({
   title,
   subtitle,
   actions,
+  badge,
 }: {
-  title: string;
-  subtitle?: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
   actions?: React.ReactNode;
+  /** Shown right after the title (a status pill). */
+  badge?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-niat-line/70 pb-4">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-niat-text sm:text-3xl">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm font-medium text-niat-muted">{subtitle}</p>}
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="text-[22px] font-bold leading-tight tracking-tight text-niat-text">{title}</h1>
+          {badge}
+        </div>
+        {subtitle && <p className="mt-0.5 text-[13.5px] text-niat-muted">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
 
 export function NoEvent() {
   return (
-    <div className="card text-center p-12">
-      <div className="text-4xl" aria-hidden="true">
-        📅
+    <EmptyState icon={Icons.calendar} title="No event selected"
+      action={(
+        <div className="flex flex-wrap justify-center gap-2">
+          <NavLink to="/admin/setup" className="btn-primary">Create an event</NavLink>
+          <NavLink to="/admin/events" className="btn-secondary">Pick an existing one</NavLink>
+        </div>
+      )}>
+      Choose or create an event to see its check-ins, rooms and projects here.
+    </EmptyState>
+  );
+}
+
+/** Placeholder blocks in the page's shape while the first data loads. */
+export function AdminSkeleton() {
+  return (
+    <div className="animate-pulse" aria-busy="true" aria-label="Loading">
+      <div className="h-7 w-56 rounded-lg bg-stone-200/70" />
+      <div className="mt-2 h-4 w-80 max-w-full rounded bg-stone-200/50" />
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl bg-white shadow-[var(--shadow-card)]" />)}
       </div>
-      <h2 className="mt-3 text-xl font-bold text-niat-text">No event selected</h2>
-      <p className="mt-1 text-sm text-niat-muted">Configure an event to view the live operations command center.</p>
-      <NavLink to="/admin/setup" className="btn-primary mt-5">
-        Create an event
-      </NavLink>
+      <div className="mt-4 h-72 rounded-2xl bg-white shadow-[var(--shadow-card)]" />
     </div>
   );
 }

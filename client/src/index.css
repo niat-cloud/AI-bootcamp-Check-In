@@ -550,3 +550,10 @@ body {
   0%, 60%, 100% { transform: rotate(0); } 10%, 30% { transform: rotate(14deg); } 20%, 40% { transform: rotate(-8deg); } 50% { transform: rotate(10deg); }
 }
 @media (prefers-reduced-motion: reduce) { .checkin-wave { animation: none; } }
+
+/* ---------- Admin console polish ---------- */
+/* Numbers in admin tables line up in columns. */
+#admin-main table { font-variant-numeric: tabular-nums; }
+::selection { background: rgb(255 214 90 / 0.55); color: var(--color-niat-text); }
+/* Thin, warm scrollbars instead of the default grey bars. */
+* { scrollbar-width: thin; scrollbar-color: rgb(167 25 30 / 0.25) transparent; }
