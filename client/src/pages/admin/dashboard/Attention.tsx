@@ -77,24 +77,23 @@ const STYLE: Record<Level, { box: string; icon: string; symbol: string; name: st
   info: { box: 'border-niat-line bg-niat-warm-white', icon: 'bg-stone-500 text-white', symbol: 'i', name: 'Note' },
 };
 
+/** How many things need an organizer now, and whether any is urgent (for the header chip). */
+export function attentionSummary(data: DashboardData, now: number) {
+  const items = attentionItems(data, now, () => {});
+  return { count: items.length, urgent: items.some((i) => i.level === 'critical') };
+}
+
+/** The list of things to act on. Renders nothing when all is well: the header's "All clear" says so. */
 export function Attention({ data, now, showCallList }: { data: DashboardData; now: number; showCallList: () => void }) {
   const items = attentionItems(data, now, showCallList);
-
-  if (items.length === 0) {
-    return (
-      <p role="status" className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-900">
-        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-600 text-xs font-bold text-white" aria-hidden="true">✓</span>
-        Nothing needs attention right now.
-      </p>
-    );
-  }
+  if (items.length === 0) return null;
 
   return (
     <ul className="space-y-2" aria-label="Needs attention">
       {items.map((item) => {
         const style = STYLE[item.level];
         return (
-          <li key={item.title} className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border px-4 py-3 ${style.box}`}>
+          <li key={item.title} className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border px-4 py-2.5 ${style.box}`}>
             <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs font-bold ${style.icon}`} aria-hidden="true">
               {style.symbol}
             </span>

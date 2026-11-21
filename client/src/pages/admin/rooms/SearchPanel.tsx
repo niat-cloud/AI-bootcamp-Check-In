@@ -44,10 +44,13 @@ export function SearchBar({ filters, onChange, rooms, teams }: {
     : teams.filter((t) => t.roomId === filters.roomId).map((t) => t.teamNumber);
 
   return (
-    <div className="mt-6 flex flex-wrap items-end gap-2" role="search">
-      <label className="min-w-[220px] flex-1">
+    <div className="mt-4 flex flex-wrap items-center gap-2" role="search">
+      <label className="relative min-w-[220px] max-w-sm flex-1">
         <span className="sr-only">Search students</span>
-        <input className="input py-2.5" placeholder="Search name or phone…" value={filters.q} autoComplete="off"
+        <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-niat-muted" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+        </svg>
+        <input className="input h-9 py-0 pl-9 text-sm" placeholder="Search name or phone…" value={filters.q} autoComplete="off"
           onChange={(e) => onChange({ ...filters, q: e.target.value })} />
       </label>
       <Select label="Room" value={String(filters.roomId)}
@@ -61,7 +64,7 @@ export function SearchBar({ filters, onChange, rooms, teams }: {
         onChange={(v) => onChange({ ...filters, status: v as Filters['status'] })}
         options={[['all', 'Any status'], ['checked_in', 'Seated'], ['waiting', 'Awaiting seat'], ['pending', 'Not arrived']]} />
       {(filtersActive(filters) || filters.roomId !== 'all') && (
-        <button className="btn-secondary py-2.5" onClick={() => onChange(emptyFilters)}>Clear</button>
+        <button className="btn-secondary h-9 px-3 py-0 text-sm" onClick={() => onChange(emptyFilters)}>Clear</button>
       )}
     </div>
   );
@@ -77,8 +80,9 @@ function Select({ label, value, onChange, options, disabled, title }: {
 }) {
   return (
     <label className="w-[calc(50%-4px)] sm:w-40" title={title}>
-      <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-niat-muted">{label}</span>
-      <select className="input py-2.5" value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
+      {/* The options say what they filter ("All rooms", "Any status"), so the label is for screen readers. */}
+      <span className="sr-only">{label}</span>
+      <select className="input h-9 py-0 text-sm" value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
     </label>

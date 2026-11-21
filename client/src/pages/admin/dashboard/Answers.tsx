@@ -15,11 +15,11 @@ export function LunchCard({ data, className = '' }: { data: DashboardData; class
       actions={total > 0 && <PageLink to="/admin/participants?filter=veg">Who chose what</PageLink>}>
       {total === 0 && notAnswered === 0 ? <Empty>No one has checked in yet.</Empty> : (
         <div>
-          <dl className="grid grid-cols-2 gap-3">
+          <dl className="space-y-2">
             <Meal label="Veg" icon="🥗" n={veg} share={pct(veg, total)} tone="text-emerald-700" />
             <Meal label="Non-veg" icon="🍗" n={nonVeg} share={pct(nonVeg, total)} tone="text-niat-maroon" />
           </dl>
-          <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-stone-100" aria-hidden="true">
+          <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-stone-100" aria-hidden="true">
             <span className="h-full bg-emerald-500 transition-[width] duration-500" style={{ width: `${pct(veg, total)}%` }} />
             <span className="h-full bg-niat-maroon transition-[width] duration-500" style={{ width: `${pct(nonVeg, total)}%` }} />
           </div>
@@ -36,11 +36,11 @@ export function LunchCard({ data, className = '' }: { data: DashboardData; class
 
 function Meal({ label, icon, n, share, tone }: { label: string; icon: string; n: number; share: number; tone: string }) {
   return (
-    <div className="rounded-xl bg-niat-warm-white px-4 py-3">
-      <dt className="flex items-center gap-1.5 text-sm font-semibold text-niat-muted"><span aria-hidden="true">{icon}</span>{label}</dt>
-      <dd className="mt-1 flex items-baseline gap-2">
-        <span className={`text-3xl font-bold tabular-nums ${tone}`}>{n.toLocaleString('en-IN')}</span>
-        <span className="text-sm text-niat-muted tabular-nums">{share}%</span>
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-niat-warm-white px-3 py-2">
+      <dt className="flex items-center gap-2 text-[13.5px] font-semibold text-niat-text"><span aria-hidden="true">{icon}</span>{label}</dt>
+      <dd className="flex items-baseline gap-2">
+        <span className={`text-2xl font-bold tabular-nums ${tone}`}>{n.toLocaleString('en-IN')}</span>
+        <span className="w-9 text-right text-xs text-niat-muted tabular-nums">{share}%</span>
       </dd>
     </div>
   );

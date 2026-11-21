@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../.env src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').cpSync('src/db/migrations', 'dist/db/migrations', { recursive: true })\"",
     "start": "node --env-file-if-exists=../.env dist/index.js",
     "migrate": "tsx --env-file-if-exists=../.env src/db/migrate.ts",
     "test": "vitest run"

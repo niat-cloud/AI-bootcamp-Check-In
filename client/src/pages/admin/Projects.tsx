@@ -6,6 +6,7 @@ import { Leaderboard } from './projects/Leaderboard';
 import { Present } from './projects/Present';
 import { ProjectDrawer } from './projects/ProjectDrawer';
 import { RoomBoard } from './projects/RoomBoard';
+import { StatTile } from './dashboard/ui';
 import { AWARDS, clock, SHORTLIST_SIZE, STATUS_LABEL, type Award, type ProjectRoom, type ProjectsOverview } from './projects/types';
 
 /**
@@ -86,11 +87,12 @@ export default function Projects() {
         <div className="mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">AI scoring is off: set <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code> or <code>ANTHROPIC_API_KEY</code> on the server. Submissions are still collected.</div>
       )}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[['Teams submitted', `${totals.submitted}/${totals.teams}`], ['AI scored', totals.scored], ['Waiting for AI', data.queue.pending + data.queue.evaluating], ['Scoring failed', data.queue.failed]].map(([label, value]) => (
-          <div key={label} className="card py-3"><div className="text-xs font-semibold text-niat-muted">{label}</div><div className="text-2xl font-extrabold tabular-nums">{value}</div></div>
-        ))}
-      </div>
+      <dl className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Teams submitted" value={<>{totals.submitted}<span className="text-base font-semibold text-niat-muted"> / {totals.teams}</span></>} />
+        <StatTile label="AI scored" value={totals.scored} />
+        <StatTile label="Waiting for AI" value={data.queue.pending + data.queue.evaluating} />
+        <StatTile label="Scoring failed" value={data.queue.failed} tone={data.queue.failed ? 'alert' : undefined} />
+      </dl>
       {data.aiConfigured && <ScoringProgress scored={totals.scored} submitted={totals.submitted} data={data} autoScore={autoScore} setAutoScore={setAutoScore} />}
 
       <RoomBoard rooms={data.rooms} selectedId={room?.id} onSelect={setRoomId}

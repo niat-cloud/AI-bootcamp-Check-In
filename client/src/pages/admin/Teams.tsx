@@ -105,7 +105,7 @@ export default function Teams() {
         <div className="flex flex-wrap gap-2">
           {canEdit && <button className="btn-secondary" onClick={() => setDialog({})}>+ Add Room</button>}
           {live && (
-            <button className="btn-primary" onClick={allocate}
+            <button className={data?.stats.waiting ? 'btn-primary' : 'btn-secondary'} onClick={allocate}
               disabled={allocating || !data || data.stats.waiting === 0 || data.stats.availableSeats === 0}
               title={!data || data.stats.waiting === 0
                 ? 'Nobody is waiting for a seat'

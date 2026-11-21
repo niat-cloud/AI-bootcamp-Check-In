@@ -4,7 +4,7 @@ import { formatDate } from '../../lib/api';
 import { NoEvent, useAdmin } from './AdminLayout';
 import { ClassCard, LunchCard } from './dashboard/Answers';
 import { ArrivalsChart } from './dashboard/ArrivalsChart';
-import { Attention } from './dashboard/Attention';
+import { Attention, attentionSummary } from './dashboard/Attention';
 import { CallList } from './dashboard/CallList';
 import { clock, useDashboard, useNow, type DashboardData } from './dashboard/data';
 import { BreakdownCard, SourcePerformance } from './dashboard/Funnels';
@@ -46,35 +46,49 @@ export default function Dashboard() {
 
   if (!event) return <NoEvent />;
 
+  const attention = data && isLive ? attentionSummary(data, now) : null;
+
   return (
-    <div className="space-y-5 pb-12">
-      <header className="card flex flex-wrap items-center justify-between gap-4">
+    <div className="pb-12">
+      <header className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-niat-text">{event.name}</h1>
+            <h1 className="text-[22px] font-bold leading-tight tracking-tight text-niat-text">{event.name}</h1>
             <StatusPill status={event.status} />
+            {attention && (attention.count === 0 ? (
+              <span role="status" className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                All clear
+              </span>
+            ) : (
+              <span role="status" className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+                attention.urgent ? 'bg-rose-50 text-rose-800 ring-rose-200' : 'bg-amber-50 text-amber-900 ring-amber-200'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${attention.urgent ? 'bg-rose-600' : 'bg-amber-500'}`} aria-hidden="true" />
+                {attention.count} {attention.count === 1 ? 'thing needs' : 'things need'} attention
+              </span>
+            ))}
           </div>
-          <p className="mt-1 text-sm text-niat-muted">
+          <p className="mt-0.5 text-[13.5px] text-niat-muted">
             {formatDate(event.date)}{event.time && ` · ${event.time}`}{event.locationName && ` · ${event.locationName}`}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Freshness live={isLive} error={error} loadedAt={loadedAt} />
-          <button type="button" className="btn-secondary px-3 py-2 text-sm" onClick={() => { refresh(); reload(); }}>
+          <button type="button" className="btn-secondary h-9 px-3 text-sm" onClick={() => { refresh(); reload(); }}>
             Refresh
           </button>
           {isLive && (
-            <Link to={`/gate/${event.id}`} target="_blank" rel="noopener noreferrer" className="btn-primary px-3 py-2 text-sm">
+            <Link to={`/gate/${event.id}`} target="_blank" rel="noopener noreferrer" className="btn-primary h-9 px-3 text-sm">
               Open gate kiosk <span aria-hidden="true">↗</span>
             </Link>
           )}
         </div>
       </header>
 
-      <div role="tablist" aria-label="Dashboard view" className="flex gap-1 border-b border-niat-line">
+      <div role="tablist" aria-label="Dashboard view" className="mb-4 flex gap-1 border-b border-niat-line">
         {([['live', 'Live operations'], ['marketing', 'Marketing']] as const).map(([v, label]) => (
           <button key={v} role="tab" type="button" aria-selected={view === v} onClick={() => setView(v)}
-            className={`-mb-px cursor-pointer border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+            className={`-mb-px cursor-pointer border-b-2 px-3 py-2 text-[13.5px] font-semibold transition-colors ${
               view === v ? 'border-niat-maroon text-niat-maroon' : 'border-transparent text-niat-muted hover:text-niat-text'
             }`}>
             {label}
@@ -89,13 +103,13 @@ export default function Dashboard() {
       ) : view === 'live' ? (
         <LiveView data={data} now={now} showCallList={() => showCallList()} />
       ) : (
-        <div role="tabpanel" aria-label="Marketing" className="space-y-5">
+        <div role="tabpanel" aria-label="Marketing" className="space-y-4">
           <Legend items={[
             { swatch: REGISTERED_SWATCH, label: 'Registered' },
             { swatch: ARRIVED_SWATCH, label: 'Arrived' },
           ]} />
           <SourcePerformance sources={data.sources} withoutSource={data.stats.withoutSource} onPick={showCallList} />
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
             <BreakdownCard title="Top areas" subtitle="Where people are coming from" data={data.areas}
               empty="No areas yet. People give their area when they check in, or import it with an Area column."
               othersLabel="areas" missingLabel="Area not given yet" />
@@ -114,21 +128,21 @@ export default function Dashboard() {
 
 function LiveView({ data, now, showCallList }: { data: DashboardData; now: number; showCallList: () => void }) {
   return (
-    <div role="tabpanel" aria-label="Live operations" className="space-y-5">
+    <div role="tabpanel" aria-label="Live operations" className="space-y-4">
       <Attention data={data} now={now} showCallList={showCallList} />
       <KpiRow data={data} now={now} showCallList={showCallList} />
-      <div className="grid gap-5 lg:grid-cols-12">
+      <div className="grid gap-4 lg:grid-cols-12">
         <ArrivalsChart data={data} now={now} className="lg:col-span-7" />
         {/* The feed takes the chart's height and scrolls inside it, so the row never grows past the chart. */}
-        <div className="lg:relative lg:col-span-5 lg:min-h-[26rem]">
+        <div className="lg:relative lg:col-span-5 lg:min-h-[22rem]">
           <LiveFeed data={data} now={now} className="lg:absolute lg:inset-0" />
         </div>
       </div>
-      <div className="grid gap-5 lg:grid-cols-12">
-        <RoomCapacity data={data} className="lg:col-span-7" />
-        <WaitingList data={data} now={now} className="lg:col-span-5" />
+      <div className="grid gap-4 lg:grid-cols-12">
+        <RoomCapacity data={data} className="lg:col-span-5" />
+        <LunchCard data={data} className="lg:col-span-3" />
+        <WaitingList data={data} now={now} className="lg:col-span-4" />
       </div>
-      <LunchCard data={data} />
       <TeamGrid data={data} />
     </div>
   );

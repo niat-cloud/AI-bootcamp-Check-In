@@ -11,7 +11,7 @@ Legend: `[x]` done and tested · `[~]` partly done, rest needs a decision · `[ 
 
 | Item | Status | Where |
 |---|---|---|
-| 1.1 Migrations | **Partly.** Dev servers no longer migrate a remote DB unless `ALLOW_REMOTE_MIGRATE=1`. Running migrations as part of the Vercel build is **not** done: it would change production on every deploy, so it stays a deliberate `npm run migrate` (README step 3). | `server/src/index.ts`, README |
+| 1.1 Migrations | **Done (2026-11-14).** After a deploy ran ahead of the schema in production (sign-in and check-in failed until 010–013 were applied by hand), deploys now migrate themselves: the Vercel entry runs `ensureSchema()` before the first request on each instance, with a transaction-level advisory lock so racing instances apply each migration once (tested with 5 racing instances on an empty database). The build copies the SQL into `server/dist` so the function bundle carries it. `AUTO_MIGRATE=false` turns it off; dev servers still never migrate a remote DB. | `api/index.js`, `server/src/db/migrate.ts`, `server/package.json` |
 | 1.2 Health | Done: checks the DB and reports the schema version. | `server/src/app.ts` |
 | 1.3 Logs + request ids | Done: one JSON line per API request, `x-request-id` header, id in error bodies, "Ref:" shown on 500s. | `server/src/app.ts` |
 | 1.4 CI | Done: GitHub Actions with a Postgres service; build + all tests. Requiring it before deploys is a Vercel setting (yours). | `.github/workflows/ci.yml` |
@@ -85,7 +85,7 @@ Tests: 50 pass (8 new in `server/test/hardening.int.test.ts`).
 
 ### 1. Operations (highest risk first)
 
-- [~] **ARCH-ITEM-1.1 [Production migrations are not applied by deploys]**
+- [x] **ARCH-ITEM-1.1 [Production migrations are not applied by deploys]**
   - **Finding:** `api/index.js` imports `createApp()` only. `migrate()` runs in `server/src/index.ts`, which Vercel never executes. A deploy that needs migrations 008–012 will ship code against an old schema and fail at runtime (`column "grade" does not exist`). Meanwhile the local `npm run dev` with a production `.env` *does* migrate production, silently.
   - **Fix:** (a) add a `migrate:prod` step to the release checklist / Vercel build (`vercel.json` `buildCommand`: `npm run build && npm run migrate -w server`, with `DATABASE_URL` available at build time), (b) guard `server/src/index.ts` so a dev server refuses to auto-migrate a non-local database unless `ALLOW_REMOTE_MIGRATE=1`.
   - **Patch:**
